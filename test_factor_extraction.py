@@ -2,7 +2,7 @@
 ファクター抽出のテストスクリプト
 """
 import sys
-sys.path.append('/home/user/webapp/nar-ai-yoso')
+sys.path.append('E:\\UmaData\\nar-analytics-python')
 
 import psycopg2
 from core.factor_extractor import extract_all_factors
@@ -27,19 +27,8 @@ try:
     # 最新レースの1頭分のデータを取得
     query = """
         SELECT 
-            se.*,
-            ra.kyori,
-            ra.babajotai_code_dirt,
-            ra.mawari_code,
-            ra.kyoso_joken_code,
-            ra.kyoso_joken_meisho
+            se.*
         FROM nvd_se se
-        JOIN nvd_ra ra ON (
-            se.kaisai_nen = ra.kaisai_nen
-            AND se.kaisai_tsukihi = ra.kaisai_tsukihi
-            AND se.keibajo_code = ra.keibajo_code
-            AND se.race_bango = ra.race_bango
-        )
         WHERE se.kaisai_nen >= '2024'
         ORDER BY se.kaisai_nen DESC, se.kaisai_tsukihi DESC
         LIMIT 1
@@ -62,15 +51,39 @@ try:
     se_columns = [col[0] for col in cur.fetchall()]
     
     # horse_data を作成
-    horse_data = dict(zip(se_columns, row[:len(se_columns)]))
+    horse_data = dict(zip(se_columns, row))
+    
+    # レースデータを取得
+    query_ra = """
+        SELECT kyori, babajotai_code_dirt, mawari_code, 
+               kyoso_joken_code, kyoso_joken_meisho
+        FROM nvd_ra
+        WHERE kaisai_nen = %s
+        AND kaisai_tsukihi = %s
+        AND keibajo_code = %s
+        AND race_bango = %s
+    """
+    
+    cur.execute(query_ra, (
+        horse_data['kaisai_nen'],
+        horse_data['kaisai_tsukihi'],
+        horse_data['keibajo_code'],
+        horse_data['race_bango']
+    ))
+    
+    ra_row = cur.fetchone()
+    
+    if not ra_row:
+        print("❌ レースデータが見つかりませんでした")
+        exit(1)
     
     # race_data を作成
     race_data = {
-        'kyori': row[len(se_columns)],
-        'babajotai_code_dirt': row[len(se_columns) + 1],
-        'mawari_code': row[len(se_columns) + 2],
-        'kyoso_joken_code': row[len(se_columns) + 3],
-        'kyoso_joken_meisho': row[len(se_columns) + 4]
+        'kyori': ra_row[0],
+        'babajotai_code_dirt': ra_row[1],
+        'mawari_code': ra_row[2],
+        'kyoso_joken_code': ra_row[3],
+        'kyoso_joken_meisho': ra_row[4]
     }
     
     print(f"\n  レース: {horse_data['kaisai_nen']}/{horse_data['kaisai_tsukihi']} "
