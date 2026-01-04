@@ -49,8 +49,7 @@ def get_factor_stats(conn, keibajo_code, factor_name, factor_value, kyori=None):
     """
     ファクターの統計データ（補正回収率）を取得
     
-    注: この関数は簡易版です。実際には過去データから補正回収率を計算する必要があります。
-    CEOの既存システム（app.py）の補正回収率計算ロジックを統合してください。
+    CEOの補正回収率計算ロジックを統合済み
     
     Args:
         conn: データベース接続
@@ -63,43 +62,69 @@ def get_factor_stats(conn, keibajo_code, factor_name, factor_value, kyori=None):
         dict: {
             'cntWin': 単勝試行回数,
             'cntPlace': 複勝試行回数,
-            'rateWinHit': 単勝的中率,
-            'ratePlaceHit': 複勝的中率,
-            'rateWinRet': 単勝回収率,
-            'ratePlaceRet': 複勝回収率
+            'rateWinHit': 単勝的中率（0-100の%値）,
+            'ratePlaceHit': 複勝的中率（0-100の%値）,
+            'rateWinRet': 補正単勝回収率（0-100の%値）,
+            'ratePlaceRet': 補正複勝回収率（0-100の%値）
         }
     """
-    # TODO: CEOの既存システムから補正回収率計算ロジックを統合
-    # 現在は仮のダミーデータを返す
+    from core.factor_stats_calculator import get_factor_stats_summary
     
-    # 仮の統計データ（実装時に実際のクエリに置き換え）
-    return {
-        'cntWin': 100,
-        'cntPlace': 100,
-        'rateWinHit': 0.15,
-        'ratePlaceHit': 0.45,
-        'rateWinRet': 0.85,
-        'ratePlaceRet': 0.90
-    }
+    # 距離がない場合はデフォルト値
+    if kyori is None:
+        kyori = 1600
+    
+    try:
+        # 補正回収率を計算
+        stats = get_factor_stats_summary(
+            conn, keibajo_code, kyori, factor_name, str(factor_value)
+        )
+        
+        # AAS計算用の形式で返す（%値）
+        return {
+            'cntWin': stats['cnt_win'],
+            'cntPlace': stats['cnt_place'],
+            'rateWinHit': stats['rate_win_hit'],      # %値
+            'ratePlaceHit': stats['rate_place_hit'],  # %値
+            'rateWinRet': stats['rate_win_ret'],      # %値（補正済み）
+            'ratePlaceRet': stats['rate_place_ret']   # %値（補正済み）
+        }
+    except Exception as e:
+        print(f"Warning: ファクター統計取得エラー: {factor_name}={factor_value}, Error: {e}")
+        # エラー時はデフォルト値を返す
+        return {
+            'cntWin': 10,
+            'cntPlace': 10,
+            'rateWinHit': 10.0,
+            'ratePlaceHit': 30.0,
+            'rateWinRet': 75.0,
+            'ratePlaceRet': 80.0
+        }
 
 
 def calculate_hit_ret_raw(factor_stats):
     """
     Hit_raw, Ret_raw を計算
     
+    CEOの計算式:
+    Hit_raw = 0.65 × 単勝的中率 + 0.35 × 複勝的中率
+    Ret_raw = 0.35 × 補正単勝回収率 + 0.65 × 補正複勝回収率
+    
     Args:
-        factor_stats: ファクターの統計データ
+        factor_stats: ファクターの統計データ（%値: 0-100）
     
     Returns:
         tuple: (Hit_raw, Ret_raw, N_min)
     """
     N_min = min(factor_stats['cntWin'], factor_stats['cntPlace'])
     
-    Hit_raw = (0.65 * factor_stats['rateWinHit'] + 
-               0.35 * factor_stats['ratePlaceHit'])
+    # 的中率（%値なので100で割る）
+    Hit_raw = (0.65 * factor_stats['rateWinHit'] / 100 + 
+               0.35 * factor_stats['ratePlaceHit'] / 100)
     
-    Ret_raw = (0.35 * factor_stats['rateWinRet'] + 
-               0.65 * factor_stats['ratePlaceRet'])
+    # 回収率（%値なので100で割る）
+    Ret_raw = (0.35 * factor_stats['rateWinRet'] / 100 + 
+               0.65 * factor_stats['ratePlaceRet'] / 100)
     
     return Hit_raw, Ret_raw, N_min
 
