@@ -6,10 +6,10 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 DB_CONFIG = {
-    'host': '127.0.0.1',
+    'host': 'localhost',  # pgAdminと同じ
     'port': 5432,
     'user': 'postgres',
-    'password': 'postgres',  # CEO: 実際のパスワードに変更してください
+    'password': 'keiba2025',  # 新しいパスワード（CEOが設定後）
     'dbname': 'pckeiba'
 }
 
