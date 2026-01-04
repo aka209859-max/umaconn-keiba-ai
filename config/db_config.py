@@ -2,6 +2,9 @@
 データベース接続設定
 """
 
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 DB_CONFIG = {
     'host': '127.0.0.1',
     'port': 5432,
@@ -10,14 +13,24 @@ DB_CONFIG = {
     'dbname': 'pckeiba'
 }
 
+
+def get_db_connection():
+    """
+    データベース接続を取得
+    
+    Returns:
+        psycopg2.connection: データベース接続オブジェクト
+    """
+    return psycopg2.connect(**DB_CONFIG)
+
+
 # 接続テスト用関数
 def test_connection():
     """
     データベース接続テスト
     """
-    import psycopg2
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = get_db_connection()
         print("✅ データベース接続成功")
         conn.close()
         return True

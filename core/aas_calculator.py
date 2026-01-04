@@ -111,20 +111,20 @@ def calculate_hit_ret_raw(factor_stats):
     Ret_raw = 0.35 × 補正単勝回収率 + 0.65 × 補正複勝回収率
     
     Args:
-        factor_stats: ファクターの統計データ（%値: 0-100）
+        factor_stats: ファクターの統計データ（%値: 15% = 15）
     
     Returns:
         tuple: (Hit_raw, Ret_raw, N_min)
     """
     N_min = min(factor_stats['cntWin'], factor_stats['cntPlace'])
     
-    # 的中率（%値なので100で割る）
-    Hit_raw = (0.65 * factor_stats['rateWinHit'] / 100 + 
-               0.35 * factor_stats['ratePlaceHit'] / 100)
+    # 的中率（%値そのまま使用: 15% = 15）
+    Hit_raw = (0.65 * factor_stats['rateWinHit'] + 
+               0.35 * factor_stats['ratePlaceHit'])
     
-    # 回収率（%値なので100で割る）
-    Ret_raw = (0.35 * factor_stats['rateWinRet'] / 100 + 
-               0.65 * factor_stats['ratePlaceRet'] / 100)
+    # 回収率（%値そのまま使用: 85% = 85）
+    Ret_raw = (0.35 * factor_stats['rateWinRet'] + 
+               0.65 * factor_stats['ratePlaceRet'])
     
     return Hit_raw, Ret_raw, N_min
 
