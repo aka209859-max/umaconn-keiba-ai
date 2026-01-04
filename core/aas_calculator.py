@@ -142,9 +142,38 @@ def calculate_shrinkage(N_min):
     return np.sqrt(N_min / (N_min + 400))
 
 
+def calculate_z_scores(hit_raw_values, ret_raw_values):
+    """
+    レース内でZスコアを計算（母集団標準偏差を使用）
+    
+    Args:
+        hit_raw_values: Hit_rawのリスト
+        ret_raw_values: Ret_rawのリスト
+    
+    Returns:
+        tuple: (ZH_list, ZR_list, mu_h, sigma_h, mu_r, sigma_r)
+    """
+    # 母集団標準偏差（STDEV.P）を使用
+    mu_h = np.mean(hit_raw_values)
+    sigma_h = np.std(hit_raw_values, ddof=0)  # ddof=0 → 母集団標準偏差
+    
+    mu_r = np.mean(ret_raw_values)
+    sigma_r = np.std(ret_raw_values, ddof=0)  # ddof=0 → 母集団標準偏差
+    
+    # Zスコア計算
+    ZH_list = [(h - mu_h) / sigma_h if sigma_h > 0 else 0 for h in hit_raw_values]
+    ZR_list = [(r - mu_r) / sigma_r if sigma_r > 0 else 0 for r in ret_raw_values]
+    
+    return ZH_list, ZR_list, mu_h, sigma_h, mu_r, sigma_r
+
+
 def calculate_aas_score_from_z(ZH, ZR, Shr):
     """
     ZスコアからAAS得点を計算
+    
+    CEOの正しい計算式:
+    baseCalc = 0.55 × ZH + 0.45 × ZR
+    AAS = 12 × tanh(baseCalc) × Shr
     
     Args:
         ZH: Hit_rawのZスコア
