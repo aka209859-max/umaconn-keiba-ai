@@ -175,17 +175,20 @@ def calculate_aas_score_from_z(ZH, ZR, Shr):
     baseCalc = 0.55 × ZH + 0.45 × ZR
     AAS = 12 × tanh(baseCalc) × Shr
     
+    最終結果は小数点第1位に四捨五入
+    
     Args:
         ZH: Hit_rawのZスコア
         ZR: Ret_rawのZスコア
         Shr: Shrinkage係数
     
     Returns:
-        float: AAS得点（-12 ~ +12）
+        float: AAS得点（-12 ~ +12、小数点第1位）
     """
     baseCalc = 0.55 * ZH + 0.45 * ZR
     aas_score = 12 * np.tanh(baseCalc) * Shr
-    return aas_score
+    # CEO仕様: 小数点第2位を四捨五入
+    return round(aas_score, 1)
 
 
 def extract_single_factor_value(horse, factor_name):
