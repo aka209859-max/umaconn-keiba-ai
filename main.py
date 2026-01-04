@@ -137,9 +137,9 @@ def main():
         
         print(f"\n✅ AAS得点計算完了: {sum(len(v) for v in all_predictions.values())}レース\n")
         
-        # ステップ6: 予想をファイル保存
-        print("【ステップ6】予想ファイル保存")
-        base_output_dir = "E:/UmaData/nar-analytics-python/predictions"
+        # ステップ6: 予想をファイル保存（競馬場ごと1ファイル）
+        print("【ステップ6】予想ファイル保存（競馬場ごと）")
+        base_output_dir = "E:/UmaData/nar-analytics-python/output"
         
         saved_files = save_all_predictions(
             all_predictions,
