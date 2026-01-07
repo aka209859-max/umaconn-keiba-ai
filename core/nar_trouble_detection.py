@@ -82,7 +82,9 @@ class TroubleDetector:
                     'ketto_toroku_bango': horse['ketto_toroku_bango'],
                     'ten_time': ten_time,
                     'time': time,
-                    'kohan_3f': kohan_3f
+                    'kohan_3f': kohan_3f,
+                    'corner_1': horse.get('corner_1'),
+                    'corner_2': horse.get('corner_2')
                 })
         
         # データ不足チェック
@@ -109,6 +111,23 @@ class TroubleDetector:
             
             # 出遅れ判定（Modified Z-score > 閾値）
             if modified_z > self.MAD_THRESHOLD:
+                # 🚫 除外パターン: 逃げ馬（前半2番手以内）
+                corner_1 = horse.get('corner_1')
+                corner_2 = horse.get('corner_2')
+                
+                if corner_1 is not None and corner_2 is not None:
+                    if corner_1 > 0 and corner_2 > 0:
+                        early_avg = (corner_1 + corner_2) / 2.0
+                        
+                        # 前半2番手以内 = 逃げ・先行馬（出遅れではない）
+                        if early_avg <= 2.0:
+                            logger.info(
+                                f"逃げ馬除外: {horse['ketto_toroku_bango']} "
+                                f"(前半平均={early_avg:.1f}, テン3F={horse['ten_time']:.2f}s) "
+                                f"→ 出遅れではない"
+                            )
+                            continue
+                
                 # スコア計算（0-100に正規化）
                 trouble_score = min(100.0, modified_z * 20)
                 
