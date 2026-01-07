@@ -133,6 +133,49 @@ def get_furi_correction(furi_code: str) -> Tuple[float, str]:
 
 
 # ============================
+# 枠順補正マッピング
+# ============================
+
+def get_wakuban_correction(wakuban: int, tosu: int, kyori: int) -> Tuple[float, str]:
+    """
+    枠順補正値を計算
+    
+    Args:
+        wakuban: 枠番（1-8）
+        tosu: 出走頭数
+        kyori: 距離（m）
+    
+    Returns:
+        (補正値_秒, 説明)
+    """
+    if wakuban <= 0 or tosu <= 0:
+        return (0.0, 'データなし')
+    
+    # 枠番を相対位置に変換（0.0=最内 〜 1.0=最外）
+    relative_position = (wakuban - 1) / max(tosu - 1, 1)
+    
+    # 距離別の枠順影響度
+    if kyori < 1400:
+        # 短距離: 内枠有利、外枠不利
+        base_correction = (0.5 - relative_position) * 0.6
+        desc = '短距離・内枠有利'
+    elif kyori < 1800:
+        # マイル: 中枠やや有利
+        if 0.3 <= relative_position <= 0.7:
+            base_correction = 0.2
+            desc = 'マイル・中枠有利'
+        else:
+            base_correction = (0.5 - abs(relative_position - 0.5)) * 0.3
+            desc = 'マイル・端枠やや不利'
+    else:
+        # 中長距離: 外枠やや有利（展開待ち）
+        base_correction = (relative_position - 0.5) * 0.2
+        desc = '中長距離・外枠やや有利'
+    
+    return (round(base_correction, 2), desc)
+
+
+# ============================
 # 3. テン指数計算
 # ============================
 
@@ -141,12 +184,14 @@ def calculate_ten_index(
     kyori: int,
     baba_code: str,
     keibajo_code: str,
-    furi_code: str = '00'
+    furi_code: str = '00',
+    wakuban: int = 0,
+    tosu: int = 12
 ) -> float:
     """
     テン指数を計算
     
-    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正) × 10
+    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正 + 枠順補正) × 10
     
     Args:
         zenhan_3f: 前半3Fタイム（秒）
@@ -154,6 +199,8 @@ def calculate_ten_index(
         baba_code: 馬場状態コード
         keibajo_code: 競馬場コード
         furi_code: 不利コード（デフォルト: '00'=なし）
+        wakuban: 枠番（デフォルト: 0=補正なし）
+        tosu: 出走頭数（デフォルト: 12）
     
     Returns:
         テン指数（-100 〜 +100）
@@ -171,13 +218,18 @@ def calculate_ten_index(
     if furi_code not in ten_furi_codes:
         furi_correction = 0.0
     
+    # 枠順補正（短距離のテン指数に影響）
+    waku_correction, waku_desc = get_wakuban_correction(wakuban, tosu, kyori)
+    if kyori >= 1800:  # 中長距離ではテン指数への枠順影響は小さい
+        waku_correction = waku_correction * 0.3
+    
     # テン指数計算
-    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction) * 10
+    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction) * 10
     
     # 範囲制限
     ten_index = max(-100, min(100, ten_index))
     
-    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}])")
+    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 枠順補正={waku_correction}s [{waku_desc}])")
     
     return round(ten_index, 1)
 
@@ -191,12 +243,14 @@ def calculate_position_index(
     corner_2: int,
     corner_3: int,
     corner_4: int,
-    tosu: int
+    tosu: int,
+    wakuban: int = 0,
+    kyori: int = 1600
 ) -> float:
     """
     位置指数を計算
     
-    位置指数 = (平均通過順位 / 出走頭数) × 100
+    位置指数 = (平均通過順位 / 出走頭数) × 100 + 枠順補正
     
     Args:
         corner_1: 1コーナー通過順位
@@ -204,6 +258,8 @@ def calculate_position_index(
         corner_3: 3コーナー通過順位
         corner_4: 4コーナー通過順位
         tosu: 出走頭数
+        wakuban: 枠番（デフォルト: 0=補正なし）
+        kyori: 距離（m）
     
     Returns:
         位置指数（0 〜 100、小さいほど先頭に近い）
@@ -221,7 +277,17 @@ def calculate_position_index(
     # 位置指数（0-100の範囲に正規化）
     position_index = (avg_position / tosu) * 100 if tosu > 0 else 50.0
     
-    logger.debug(f"位置指数: {position_index:.1f} (平均順位={avg_position:.1f}/{tosu}頭)")
+    # 枠順補正（短距離で内枠有利、外枠不利）
+    waku_correction, waku_desc = get_wakuban_correction(wakuban, tosu, kyori)
+    # 位置指数への影響は逆符号（内枠ほど先頭に近い＝指数が小さくなる）
+    position_waku_correction = -waku_correction * 15  # 位置指数への影響度調整
+    
+    position_index = position_index + position_waku_correction
+    
+    # 範囲制限
+    position_index = max(0, min(100, position_index))
+    
+    logger.debug(f"位置指数: {position_index:.1f} (平均順位={avg_position:.1f}/{tosu}頭, 枠順補正={position_waku_correction:.1f} [{waku_desc}])")
     
     return round(position_index, 1)
 
@@ -325,7 +391,10 @@ def calculate_pace_index(
 
 def predict_ashishitsu(
     past_corners: List[Tuple[int, int, int, int]],
-    current_members: Optional[List[Dict]] = None
+    current_members: Optional[List[Dict]] = None,
+    wakuban: int = 0,
+    tosu: int = 12,
+    kyori: int = 1600
 ) -> str:
     """
     予想脚質を判定
@@ -335,6 +404,9 @@ def predict_ashishitsu(
     Args:
         past_corners: 過去の通過順位リスト [(c1, c2, c3, c4), ...]
         current_members: 今回のメンバー構成（相対評価用）
+        wakuban: 枠番
+        tosu: 出走頭数
+        kyori: 距離
     
     Returns:
         予想脚質（'逃', '先', '差', '追', '好', '自'）
@@ -355,20 +427,31 @@ def predict_ashishitsu(
     
     avg_position = sum(all_positions) / len(all_positions)
     
+    # 枠順補正（短距離の内枠は前に行きやすい）
+    waku_correction, waku_desc = get_wakuban_correction(wakuban, tosu, kyori)
+    if kyori < 1400:
+        # 短距離では枠順の影響大
+        position_adjustment = -waku_correction * 2  # 内枠は順位が前になりやすい
+    else:
+        # 中長距離では枠順の影響小
+        position_adjustment = -waku_correction * 0.5
+    
+    adjusted_position = avg_position + position_adjustment
+    
     # 脚質判定
-    if avg_position <= 2.0:
+    if adjusted_position <= 2.0:
         ashishitsu = '逃'
-    elif avg_position <= 4.0:
+    elif adjusted_position <= 4.0:
         ashishitsu = '先'
-    elif avg_position <= 8.0:
-        if avg_position <= 6.0:
+    elif adjusted_position <= 8.0:
+        if adjusted_position <= 6.0:
             ashishitsu = '好'
         else:
             ashishitsu = '差'
     else:
         ashishitsu = '追'
     
-    logger.debug(f"予想脚質: {ashishitsu} (平均順位={avg_position:.1f})")
+    logger.debug(f"予想脚質: {ashishitsu} (平均順位={avg_position:.1f}, 枠順補正後={adjusted_position:.1f}, 枠={wakuban}番[{waku_desc}])")
     
     return ashishitsu
 
@@ -409,16 +492,17 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         keibajo_code = str(horse_data.get('keibajo_code', '42'))
         tosu = safe_int(horse_data.get('tosu'), 12)
         furi_code = str(horse_data.get('furi_code', '00'))
+        wakuban = safe_int(horse_data.get('wakuban'), 0)
         
         # 各指数を計算
-        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code)
-        position_index = calculate_position_index(corner_1, corner_2, corner_3, corner_4, tosu)
+        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu)
+        position_index = calculate_position_index(corner_1, corner_2, corner_3, corner_4, tosu, wakuban, kyori)
         agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code)
         pace_index = calculate_pace_index(ten_index, agari_index, zenhan_3f, kohan_3f)
         
         # 予想脚質（過去データがある場合）
         past_corners = horse_data.get('past_corners', [])
-        ashishitsu = predict_ashishitsu(past_corners)
+        ashishitsu = predict_ashishitsu(past_corners, wakuban=wakuban, tosu=tosu, kyori=kyori)
         
         return {
             'ten_index': ten_index,
@@ -460,6 +544,7 @@ if __name__ == "__main__":
         'keibajo_code': '42',
         'tosu': 12,
         'furi_code': '00',  # 不利なし
+        'wakuban': 3,  # 3枠（内枠寄り）
         'past_corners': [
             (2, 2, 3, 2),
             (1, 1, 2, 1),
@@ -467,7 +552,7 @@ if __name__ == "__main__":
         ]
     }
     
-    # 不利ありのテストデータ
+    # 不利あり＋外枠のテストデータ
     test_horse_furi = {
         'zenhan_3f': 36.5,
         'kohan_3f': 39.5,
@@ -480,6 +565,7 @@ if __name__ == "__main__":
         'keibajo_code': '42',
         'tosu': 12,
         'furi_code': '10',  # 大外を回される
+        'wakuban': 8,  # 8枠（最外）
         'past_corners': [
             (8, 7, 6, 5),
             (9, 8, 7, 6),
