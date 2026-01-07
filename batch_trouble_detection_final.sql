@@ -93,6 +93,8 @@ WITH z_scores AS (
         t.keibajo_code,
         t.race_bango,
         t.ten_equivalent,
+        t.corner_1,
+        t.corner_2,
         s.median_ten,
         s.mad,
         CASE 
@@ -121,7 +123,9 @@ SELECT
     ten_equivalent,
     NULL::NUMERIC as rank_decline
 FROM z_scores
-WHERE modified_z_score > 3.5;
+WHERE modified_z_score > 3.5
+  -- 🚫 除外: 逃げ馬（前半2番手以内）
+  AND NOT (corner_1 > 0 AND corner_2 > 0 AND (corner_1 + corner_2) / 2.0 <= 2.0);
 
 SELECT '✅ Step 2完了: 出遅れ検知' as status, COUNT(*) as detected_count FROM temp_slow_start;
 
