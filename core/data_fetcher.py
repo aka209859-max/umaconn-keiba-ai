@@ -100,6 +100,7 @@ def get_previous_race_by_id(conn, ketto_toroku_bango, keibajo_code, current_date
     WHERE 
         se.ketto_toroku_bango = %s AND
         se.keibajo_code = %s AND
+        se.keibajo_code != '61' AND
         se.kakutei_chakujun IS NOT NULL AND
         se.kakutei_chakujun != '' AND
         se.kaisai_nen || se.kaisai_tsukihi < %s
