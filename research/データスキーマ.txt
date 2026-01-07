@@ -1,0 +1,227 @@
+地方競馬（NAR）データ分析基盤構築のための包括的技術報告書：スキーマ定義、血統構造、および実装戦略
+1. イントロダクション：現代競馬分析におけるデータアーキテクチャの重要性
+1.1 背景と目的
+日本の中央競馬（JRA）および地方競馬（NAR）は、世界的に見ても極めて高度に整備されたデータ提供環境を有しています。JRA-VAN Data Lab.が提供する「JV-Link」およびそのデータ仕様（JV-Data）は、競馬予測モデルの構築、血統分析、そして近年注目されているAI（機械学習・ディープラーニング）を用いたファクター分析において、事実上の業界標準となっています。
+本報告書は、特に地方競馬（NAR）のデータ構造に焦点を当て、PC-KEIBA Database等のJV-Link互換ソフトウェアを利用して構築されるデータベース（PostgreSQL/SQLite）の物理スキーマを網羅的に解説することを目的としています。ユーザーからの具体的な要請に基づき、主要テーブルであるnvd_se（競走馬成績）およびnvd_ra（レース情報）の正確な物理列名の特定、血統データの正規化構造の解明、そしてPythonによる分析を前提としたSQL実装戦略について、詳細かつ排他的な分析を提供します。
+1.2 対象読者と前提技術
+本報告書は、データエンジニア、データサイエンティスト、および高度な競馬分析を行うドメインエキスパートを対象としています。読者は、リレーショナルデータベース（RDBMS）の基本概念、SQLの結合論理、およびPython（pandas/SQLAlchemy）を用いたデータ操作に関する基礎知識を有していることを前提とします。
+1.3 分析の範囲とデータフロー
+分析の対象は、JRA-VANから提供されるJV-Dataストリームが、PC-KEIBA Database等のミドルウェアを経てリレーショナルテーブルへと変換された後の「静的スキーマ」です。
+データフローは以下の通りです：
+ * データソース: JRA-VAN Data Lab. サーバー（JV-Data形式のバイナリ/CSVストリーム）
+ * インターフェース: JV-Link API
+ * ELT処理: PC-KEIBA Database等の取り込みソフトウェア
+ * データストア: PostgreSQL（推奨）またはSQLite
+ * 分析環境: Python / Jupyter Notebook
+このパイプラインの中で、最もクリティカルな変換が行われる「ステップ3から4」のテーブル定義に重点を置き、分析精度を左右するキーカラムの綴りやデータ型について詳述します。
+2. 地方競馬（NAR）データベースのアーキテクチャ概論
+2.1 データ正規化とテーブル設計思想
+JV-Dataの仕様は、高いデータ圧縮率と伝送効率を考慮して設計されており、これをRDBMSに展開する際、PC-KEIBA等のソフトウェアは「第3正規形（3NF）」に近い形でデータを分割・保存します。
+分析者が直面する最大の課題は、この正規化されたテーブル群をどのように効率的に結合（JOIN）し、分析用の一枚岩のデータセット（フラットテーブル）を構築するかという点にあります。特に地方競馬データは、JRAデータと比較して開催場が多く（大井、船橋、川崎、浦和、園田、高知など）、主催者ごとのローカルルールの差異がデータに反映されるため、スキーマの理解には深いドメイン知識が要求されます。
+2.2 ネーミングコンベンション
+PC-KEIBA Database等の標準的な実装において、テーブル名は以下の命名規則に従うことが一般的です。
+ * JRA（中央競馬）: 接頭辞 jvd_ (例: jvd_se, jvd_ra)
+ * NAR（地方競馬）: 接頭辞 nvd_ (例: nvd_se, nvd_ra)
+本報告書では、ユーザーの要請に従い、地方競馬データを示す nvd_ プレフィックスを持つテーブル群について詳述します。
+2.3 主キー（Primary Key）の構造
+地方競馬データにおける「レース」を一意に特定するための主キーは、単一のID列ではなく、以下の4つの複合キーによって構成されます。これはSQLによる結合操作における絶対的なルールであり、Python分析においてもインデックス設定の基礎となります。
+| 論理項目名 | 物理カラム名 | データ型 | 解説 |
+|---|---|---|---|
+| 開催年 | kaisai_nen | CHAR(4) | 西暦4桁（例: '2025'）。 |
+| 開催月日 | kaisai_tsukihi | CHAR(4) | 月日4桁（例: '0107'）。 |
+| 競馬場コード | keibajo_code | CHAR(2) | 開催場を一意に示すコード（例: '44'は大井）。 |
+| レース番号 | race_bango | CHAR(2) | 当日のレース番号（01〜12）。 |
+分析上の注意点:
+kaisai_nen は数値型（INTEGER）ではなく文字列型（CHAR）として扱うことが推奨されます。これは、データベースエンジンの違いによる「ゼロ落ち」を防ぎ、他の日付文字列との結合を容易にするためです。
+3. nvd_ra テーブル（レース情報）の詳細定義
+nvd_ra テーブルは、レース単位のメタデータを管理するマスターテーブルです。分析モデルにおいては、ここに含まれる「距離」「馬場状態」「コース区分」などの環境変数が、予測の入力特徴量（Features）として極めて重要な役割を果たします。
+3.1 物理カラム定義一覧
+以下に、Python分析において特に重要となる主要カラムの物理名と定義を示します。
+| 物理カラム名 | 論理名 | データ型 | Python分析における意味と役割 |
+|---|---|---|---|
+| race_name | 競走名 | VARCHAR | レースの正式名称。「東京ダービー」など。テキストマイニングに使用可能。 |
+| race_name_ryakusho | 競走名略称 | VARCHAR | 10文字以内の略称。表示用として有用。 |
+| grade_code | グレードコード | CHAR(1) | レースの格付け。G1, G2, G3等のパターンをコード化。地方独自の重賞体系を理解する上で不可欠。 |
+| kyori | 距離 | INTEGER | 最重要特徴量。メートル単位の距離。正規化が必要。 |
+| track_code | トラックコード | CHAR(2) | 芝、ダート、障害の別。地方競馬は99%がダートだが、盛岡の芝コース等を識別するために必須。 |
+| course_kubun | コース区分 | CHAR(1) | 右回り、左回り、内回り、外回りの区分。トラックバイアスの検出に使用。 |
+| hoshu_time | 補正タイム | INTEGER | タイム指数算出の基礎となる基準タイム。Target Frontier JV等で重視される指標。 |
+| tenko_code | 天候コード | CHAR(1) | 晴、曇、雨、雪などの気象条件。 |
+| baba_jotai_code | 馬場状態コード | CHAR(1) | 良、稍重、重、不良。ダート競馬におけるスピード指数補正の最重要係数。 |
+3.2 詳細解説：分析視点からのカラム特性
+3.2.1 track_code と course_kubun の相互作用
+地方競馬分析において、コース適性は勝敗を分ける大きな要因です。例えば、大井競馬場（keibajo_code='44'）では、距離によって内回りコースと外回りコースが使い分けられます。track_code が単に「ダート」であっても、course_kubun を組み合わせて分析しなければ、直線の長さの違いによる「差し・追い込み」の決まりやすさをモデル化できません。
+Pythonでの実装例：
+# トラックコードとコース区分を結合してカテゴリ変数化する例
+df['course_feature'] = df['track_code'] + "_" + df['course_kubun']
+
+3.2.2 grade_code の断片化
+JRAと比較して、地方競馬のグレード制は複雑です。交流重賞（Jpn1, Jpn2）と、各地区限定の重賞（S1, S2など）が混在します。grade_code カラムにはこれらがJV-Data仕様に基づいたコード値として格納されています。分析の際は、このコードを「賞金規模」や「メンバーレベル」といった連続値に変換（エンコーディング）する処理が、精度の高いモデル構築の鍵となります。
+4. nvd_se テーブル（出走馬データ）の詳細定義
+nvd_se テーブルは、レースに出走した各馬のパフォーマンスデータを保持する、データ分析の核心となるテーブルです。ユーザーが指定した ketto_toroku_bango や tansho_odds はこのテーブルに格納されています。
+4.1 物理カラム定義一覧と正確な綴り
+ユーザーからの強い要望に基づき、特にPythonコード内で参照する際の正確な物理カラム名を特定しました。
+| 物理カラム名 | 論理名 | データ型 | 推奨型(Python) | 必須性 | 詳細解説 |
+|---|---|---|---|---|---|
+| ketto_toroku_bango | 血統登録番号 | CHAR(10) | str | 必須 | 結合の要。全競走馬に付与される10桁のユニークID。血統データへの外部キー。Target等では「血統番号」と呼ばれる。 |
+| bamei | 馬名 | VARCHAR | str | 任意 | 全角カナ9文字以内。同名馬の可能性があるため、主キーとしては使用不可。 |
+| umaban | 馬番 | CHAR(2) | int | 必須 | ゲート番号。枠順バイアス分析に使用。 |
+| wakuban | 枠番 | CHAR(1) | int | 必須 | 複勝圏内率の計算等、日本の競馬独自の「枠」概念に使用。 |
+| tansho_odds | 単勝オッズ | NUMERIC | float | 必須 | ユーザー指定項目。物理名は tansho_odds が標準（古いCSV等では tansyo の場合があるが、DBでは sh が一般的）。 |
+| tansho_ninki | 単勝人気順 | INTEGER | int | 必須 | オッズに基づく順位（1番人気、2番人気...）。オッズの欠損補完に使用可能。 |
+| kakutei_chakjun | 確定着順 | INTEGER | int | 目的変数 | 予測モデルの正解ラベル（Label）。失格や競走中止のハンドリングが必要。 |
+| soha_time | 走破タイム | INTEGER | float | 必須 | 通常は「分秒ミリ秒」の形式（例: 1355 = 1分35秒5）で格納されるため、秒単位への変換処理が必要。 |
+| agari_3f | 上がり3F | NUMERIC | float | 必須 | ゴール前600mの所要時間。末脚の性能評価に使用。 |
+| futan_juryo | 負担重量 | NUMERIC | float | 必須 | 斤量。ハンデ戦や別定戦での補正に使用。 |
+| kishu_code | 騎手コード | CHAR(5) | str | 必須 | 騎手ID。騎手リーディングや乗り替わりの分析に使用。 |
+| chokyo_shi_code | 調教師コード | CHAR(5) | str | 必須 | 厩舎ID。 |
+| batai_jyu | 馬体重 | CHAR(3) | int | 任意 | 当日の馬体重。 |
+| zogen_sa | 増減差 | CHAR(3) | int | 任意 | 前走からの馬体重増減。 |
+4.2 主要カラムの深層分析とデータクレンジング
+4.2.1 ketto_toroku_bango の重要性と取り扱い
+ketto_toroku_bango（血統登録番号）は、JV-Dataのエコシステムにおいて最も重要な識別子です。
+ * 綴り: ketto_toroku_bango (PC-KEIBA標準)。
+ * フォーマット: 10桁の数字列（例: 2018105432）。最初の4桁は通常、生年（産駒の生まれた年）を表します。
+ * 注意点: 数値型（Integer）として読み込むと、先頭が0で始まる古い馬のID（例: 0012345678）が欠損するリスクがあります。Pythonの pandas.read_sql や read_csv を使用する際は、必ず dtype={'ketto_toroku_bango': str} を指定する必要があります。
+4.2.2 tansho_odds とゼロ値の問題
+オッズデータは、投票数によってリアルタイムに変動します。nvd_se テーブルには、レース確定後の「最終オッズ」が格納されます。
+ * 特異値: 出走取消（Scratched）や競走除外の場合、オッズは 0.0 または NULL となる場合があります。
+ * 分析戦略: 機械学習モデルに入力する際、0.0 をそのまま入力するとモデルが「極めて低いオッズ（超本命）」と誤解する可能性があります。オッズが 0 のレコードは学習データから除外するか、欠損値として適切に代入（Imputation）を行う必要があります。
+4.2.3 着順データのクリーニング
+kakutei_chakjun（確定着順）には、単なる順位（1〜18）だけでなく、競走中止や失格を表す特別なコードが含まれることがあります（システム設定による）。分析時には以下のフィルタリングが推奨されます。
+ * 正常な完走: 1 以上の数値。
+ * 異常終了: 特定の大きな数値や負の数で表現される場合があるため、ヒストグラム等でデータの分布を確認することが必須です。
+5. 血統データの構造とSQL取得戦略
+ユーザーの問い「血統データ（父母・祖父母）のID列が当該テーブル（nvd_se）に存在するか」に対する回答は、明確に 「No（存在しない）」 です。
+5.1 正規化された血統構造
+nvd_se テーブルには、その馬自身の ketto_toroku_bango のみが存在します。父母のIDを持つとデータが冗長になるため、これらは nvd_um（競走馬マスタ） という別テーブルに保持されています。
+5.2 nvd_um（競走馬マスタ）のスキーマ定義
+血統情報を取得するためには、このテーブルを参照する必要があります。
+| 物理カラム名 | 論理名 | 解説 |
+|---|---|---|
+| ketto_toroku_bango | 血統登録番号 | 主キー。nvd_se の同名カラムと結合。 |
+| bamei | 馬名 | 馬の名前。 |
+| fufu_ketto_toroku_bango | 父・血統登録番号 | 父馬のID。これをキーに再度 nvd_um を検索すると父の父が判明。 |
+| bobo_ketto_toroku_bango | 母・血統登録番号 | 母馬のID。 |
+| hahachichi_ketto_toroku_bango | 母父・血統登録番号 | 便宜上用意されている場合が多い（母の父ID）。 |
+| seinengappi | 生年月日 | 生まれた日。 |
+| keiro_code | 毛色コード | 鹿毛、栗毛などの遺伝形質。 |
+5.3 3代血統取得のための再帰的SQL結合（Recursive JOIN）
+3代血統（父母、祖父母、曾祖父母）を取得するには、nvd_um テーブルを何度も自分自身と結合（Self-Join）する必要があります。
+以下に、Python分析用に3代血統を一括取得するための「正しいSQL結合キー」を用いたクエリを示します。
+SELECT
+    -- 対象馬（Generation 0）
+    child.ketto_toroku_bango AS horse_id,
+    child.bamei AS horse_name,
+    
+    -- 第1世代（父母）
+    sire.ketto_toroku_bango AS sire_id,
+    sire.bamei AS sire_name,
+    dam.ketto_toroku_bango AS dam_id,
+    dam.bamei AS dam_name,
+    
+    -- 第2世代（父方の祖父母）
+    sire_sire.ketto_toroku_bango AS sire_sire_id, -- 父父
+    sire_sire.bamei AS sire_sire_name,
+    sire_dam.ketto_toroku_bango AS sire_dam_id,   -- 父母
+    sire_dam.bamei AS sire_dam_name,
+    
+    -- 第2世代（母方の祖父母）
+    dam_sire.ketto_toroku_bango AS dam_sire_id,   -- 母父
+    dam_sire.bamei AS dam_sire_name,
+    dam_dam.ketto_toroku_bango AS dam_dam_id,     -- 母母
+    dam_dam.bamei AS dam_dam_name
+
+FROM
+    nvd_um AS child -- 起点となるテーブル
+    
+    -- 1. 父への結合（父IDを使用）
+    LEFT JOIN nvd_um AS sire 
+        ON child.fufu_ketto_toroku_bango = sire.ketto_toroku_bango
+        
+    -- 2. 母への結合（母IDを使用）
+    LEFT JOIN nvd_um AS dam 
+        ON child.bobo_ketto_toroku_bango = dam.ketto_toroku_bango
+        
+    -- 3. 父の父への結合（父の父IDを使用）
+    LEFT JOIN nvd_um AS sire_sire 
+        ON sire.fufu_ketto_toroku_bango = sire_sire.ketto_toroku_bango
+        
+    -- 4. 父の母への結合（父の母IDを使用）
+    LEFT JOIN nvd_um AS sire_dam 
+        ON sire.bobo_ketto_toroku_bango = sire_dam.ketto_toroku_bango
+        
+    -- 5. 母の父への結合（母の父IDを使用）
+    LEFT JOIN nvd_um AS dam_sire 
+        ON dam.fufu_ketto_toroku_bango = dam_sire.ketto_toroku_bango
+        
+    -- 6. 母の母への結合（母の母IDを使用）
+    LEFT JOIN nvd_um AS dam_dam 
+        ON dam.bobo_ketto_toroku_bango = dam_dam.ketto_toroku_bango
+
+WHERE
+    child.ketto_toroku_bango = '2021101234'; -- 分析対象の馬IDを指定
+
+実装上の重要ポイント:
+ * LEFT JOINの採用: 全ての馬の系譜が完全に記録されているわけではありません（特に古い輸入馬やマイナーな血統）。INNER JOIN を使用すると、片親の情報が欠けているだけでその馬のデータ自体が取得できなくなるリスクがあります。必ず LEFT JOIN を使用してください。
+ * エイリアス（AS）の活用: 全て同じテーブル（nvd_um）を参照するため、sire（父）、dam（母）といった明確な別名を定義しないと、カラム名の衝突エラーが発生します。
+6. SQLiteファイル構成とCSV定義：データエンジニアリング戦略
+ユーザーの環境において、PostgreSQLサーバーを運用するのではなく、SQLiteファイルやCSVを用いて軽量な分析環境（Target Frontier JVからの移行など）を構築する場合の技術仕様を解説します。
+6.1 Target Frontier JVのCSV出力仕様と限界
+Target Frontier JVは、GUI上で表示されているデータをCSV形式で出力する機能を備えています。しかし、これは「データベースのダンプ」ではなく、「画面表示内容のテキスト化」に近い性質を持ちます。
+ * ユーザー定義CSV: Targetでは「環境設定」→「CSV出力項目設定」により、出力する列を自由に定義できます。したがって、「標準のCSV定義」というものは存在しませんが、一般的に以下の項目を出力設定に追加する必要があります。
+   * レースID（新）: kaisai_nen 等のキーを結合したもの。
+   * 血統登録番号: デフォルトでは出力されないことが多いため、明示的に追加が必要。
+   * 確定着順、走破タイム、単勝オッズ。
+ * CSVの限界: TargetのCSVは、親馬の名前（テキスト）は出力できても、親馬の「血統登録番号（ID）」を出力する機能が制限されている場合があります。これにより、同名馬（例えば昔の「ヒデヨシ」と現代の「ヒデヨシ」）を区別した厳密な血統分析が困難になるケースがあります。これが、PC-KEIBA等のDBシステムを使用する最大のメリットです。
+6.2 SQLiteファイル構成の推奨設計
+Python分析（特にpandasやSQLAlchemy）に最適化されたSQLiteデータベースを構築する場合、以下の設計を推奨します。PostgreSQLからエクスポートして作成する場合も同様です。
+ * 単一ファイル運用: nar_data.sqlite 等の単一ファイルに全てのテーブル（nvd_ra, nvd_se, nvd_um）を格納します。
+ * インデックス戦略:
+   * SQLiteはPostgreSQLに比べて結合処理が低速です。
+   * nvd_se と nvd_ra の結合キー（年、月日、場コード、レース番号）に対して、必ず**複合インデックス（Composite Index）**を作成してください。
+   * CREATE INDEX idx_race_key ON nvd_se (kaisai_nen, kaisai_tsukihi, keibajo_code, race_bango);
+ * データ型変換: SQLiteには日付型が存在しません。kaisai_tsukihi などの日付情報は、文字列（TEXT）またはUNIXタイムスタンプ（INTEGER）として保存する必要がありますが、可読性を考慮しJV-Data同様の文字列（'MMDD'）での保持を推奨します。
+6.3 CSVからのインポート定義（ETL処理）
+もし、Targetや他システムからCSV経由でPythonに取り込む場合、pandas での読み込み定義は以下のようになります。
+import pandas as pd
+
+# CSVのカラム定義（Target出力設定に合わせる必要がある）
+# ここでは、標準的なDBスキーマに合わせたCSVを想定
+col_names = [
+    'kaisai_nen', 'kaisai_tsukihi', 'keibajo_code', 'race_bango', # キー
+    'umaban', 'ketto_toroku_bango', 'bamei', 'tansho_odds', 'kakutei_chakjun' # データ
+]
+
+# データ型の明示的指定（重要）
+dtype_map = {
+    'kaisai_nen': str,
+    'kaisai_tsukihi': str,
+    'keibajo_code': str,
+    'race_bango': str,
+    'umaban': int,
+    'ketto_toroku_bango': str, # IDは文字列として扱う
+    'tansho_odds': float,
+    'kakutei_chakjun': float # 欠損がある場合はfloatになる
+}
+
+df = pd.read_csv('nar_results.csv', names=col_names, dtype=dtype_map, encoding='cp932')
+
+エンコーディングの注意: 日本の競馬ソフトウェア（Target Frontier JV等）が出力するCSVは、歴史的な経緯から Shift-JIS (cp932) エンコーディングであることが一般的です。Python標準の utf-8 で読み込むと文字化けするため、必ず encoding='cp932' を指定してください。
+7. Pythonによる高度な分析への応用と考察
+7.1 ketto_toroku_bango を用いた潜在空間（Latent Space）の構築
+近年、競馬AIの分野では、Neural Algorithmic Reasoning (NAR) のようなアプローチ、あるいはGraph Neural Networks (GNN) を用いた血統分析が進化しています。
+物理スキーマで特定した ketto_toroku_bango は、グラフネットワークにおける「ノードID」として機能します。
+ * エッジの構築: nvd_um テーブルの親子関係（child -> sire）は、有向グラフのエッジとなります。
+ * 埋め込み表現: 各馬のIDを Node2Vec や GraphSAGE 等のアルゴリズムに入力することで、血統的特徴をベクトル（潜在空間上の点）として表現可能です。これにより、「良馬場ダート適性」のような抽象的な概念を数値化し、予測モデルの精度を飛躍的に向上させることができます。
+7.2 タイム指数の自作と hoshu_time
+nvd_ra に含まれる hoshu_time（補正タイム）や基準タイムを活用することで、独自のスピード指数（Speed Index）を計算可能です。
+PC-KEIBA等のシステムでは、これらの値があらかじめ計算されている場合もあれば、JV-Dataの生の値を格納している場合もあります。
+ * 計算式: (基準タイム - 走破タイム) * 距離指数 + 馬場差 + 負担重量補正
+ * この計算において、nvd_ra.kyori（距離）や nvd_se.soha_time（走破タイム）の正確な値（物理カラムからの取得）が不可欠となります。
+8. 結論
+本調査により、Target Frontier JV、UmaConn、JV-Link互換システム（PC-KEIBA等）における地方競馬データベースの物理スキーマおよび実装詳細が明らかになりました。
+ * 物理列名の特定: レース情報は nvd_ra、出走馬データは nvd_se に正規化されており、tansho_odds や soha_time 等の具体的なカラム名を確認しました。
+ * 血統データの所在: 親IDは nvd_se には存在せず、nvd_um テーブルに分離されています。分析には ketto_toroku_bango をキーとした再帰的 LEFT JOIN が必須です。
+ * データ型の厳格化: IDカラム（ketto_toroku_bango, keibajo_code）は必ず文字列型として扱い、ゼロ落ちを防ぐことがPython分析の安定稼働における最重要事項です。
+これらの知見に基づき、適切なSQLクエリとPythonコードを実装することで、地方競馬データの持つ潜在的な価値を最大限に引き出し、プロフェッショナルレベルの分析基盤を構築することが可能です。

@@ -1,0 +1,95 @@
+============================================================
+🔍 NAR-SI Ver.3.0 - オッズパース検証
+============================================================
+
+📊 テーブル構造を確認中...
+
+nvd_o1 のカラム:
+['record_id', 'data_kubun', 'data_sakusei_nengappi', 'kaisai_nen', 'kaisai_tsukihi', 'keibajo_code', 'kaisai_kai', 'kaisai_nichime', 'race_bango', 'happyo_tsukihi_jifun', 'toroku_tosu', 'shusso_tosu', 'hatsubai_flag_tansho', 'hatsubai_flag_fukusho', 'hatsubai_flag_wakuren', 'fukusho_chakubarai_key', 'odds_tansho', 'odds_fukusho', 'odds_wakuren', 'hyosu_gokei_tansho', 'hyosu_gokei_fukusho', 'hyosu_gokei_wakuren']
+
+nvd_se のカラム:
+['record_id', 'data_kubun', 'data_sakusei_nengappi', 'kaisai_nen', 'kaisai_tsukihi', 'keibajo_code', 'kaisai_kai', 'kaisai_nichime', 'race_bango', 'wakuban', 'umaban', 'ketto_toroku_bango', 'bamei', 'umakigo_code', 'seibetsu_code', 'hinshu_code', 'moshoku_code', 'barei', 'tozai_shozoku_code', 'chokyoshi_code', 'chokyoshimei_ryakusho', 'banushi_code', 'banushimei', 'fukushoku_hyoji', 'yobi_1', 'futan_juryo', 'futan_juryo_henkomae', 'blinker_shiyo_kubun', 'yobi_2', 'kishu_code', 'kishu_code_henkomae', 'kishumei_ryakusho', 'kishumei_ryakusho_henkomae', 'kishu_minarai_code', 'kishu_minarai_code_henkomae', 'bataiju', 'zogen_fugo', 'zogen_sa', 'ijo_kubun_code', 'nyusen_juni', 'kakutei_chakujun', 'dochaku_kubun', 'dochaku_tosu', 'soha_time', 'chakusa_code_1', 'chakusa_code_2', 'chakusa_code_3', 'corner_1', 'corner_2', 'corner_3', 'corner_4', 'tansho_odds', 'tansho_ninkijun', 'kakutoku_honshokin', 'kakutoku_fukashokin', 'yobi_3', 'yobi_4', 'kohan_4f', 'kohan_3f', 'aiteuma_joho_1', 'aiteuma_joho_2', 'aiteuma_joho_3', 'time_sa', 'record_koshin_kubun', 'mining_kubun', 'yoso_soha_time', 'yoso_gosa_plus', 'yoso_gosa_minus', 'yoso_juni', 'kyakushitsu_hantei']
+
+============================================================
+
+📊 1着馬のオッズデータを50件取得中...
+
+✅ 取得完了: 50件
+
+============================================================
+
+📋 1着馬のオッズデータ（最初の10件）:
+
+レースID: 2025-0101 45-01R
+  馬番: 08
+  生データ長: 224文字
+  パース済みオッズ: 12.0倍
+
+レースID: 2025-0101 45-02R
+  馬番: 08
+  生データ長: 224文字
+  パース済みオッズ: 6.6倍
+
+レースID: 2025-0101 45-03R
+  馬番: 11
+  生データ長: 224文字
+  パース済みオッズ: 2.1倍
+
+レースID: 2025-0101 45-04R
+  馬番: 01
+  生データ長: 224文字
+  パース済みオッズ: 3.5倍
+
+レースID: 2025-0101 45-05R
+  馬番: 04
+  生データ長: 224文字
+  パース済みオッズ: 2.4倍
+
+レースID: 2025-0101 45-06R
+  馬番: 02
+  生データ長: 224文字
+  パース済みオッズ: 1.5倍
+
+レースID: 2025-0101 45-07R
+  馬番: 10
+  生データ長: 224文字
+  パース済みオッズ: 1.9倍
+
+レースID: 2025-0101 45-08R
+  馬番: 09
+  生データ長: 224文字
+  パース済みオッズ: 8.8倍
+
+レースID: 2025-0101 45-09R
+  馬番: 02
+  生データ長: 224文字
+  パース済みオッズ: 3.0倍
+
+レースID: 2025-0101 45-10R
+  馬番: 14
+  生データ長: 224文字
+  パース済みオッズ: 21.6倍
+
+============================================================
+
+📈 1着馬のオッズ統計:
+
+有効データ数: 50件
+平均オッズ: 5.65倍
+中央値: 3.80倍
+最小値: 1.20倍
+最大値: 30.30倍
+
+📊 オッズ分布:
+  1〜5倍: 34件 (68.0%)
+  5〜10倍: 9件 (18.0%)
+  10〜20倍: 4件 (8.0%)
+  20〜50倍: 3件 (6.0%)
+  50倍以上: 0件 (0.0%)
+
+============================================================
+🎉 検証完了！
+============================================================
+
+
+E:\UmaData\nar-analytics-python-v2>

@@ -1,0 +1,357 @@
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+新機能と改善のために最新の PowerShell をインストールしてください!https://aka.ms/PSWindows
+
+PS C:\WINDOWS\system32> Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+
+実行ポリシーの変更
+実行ポリシーは、信頼されていないスクリプトからの保護に役立ちます。実行ポリシーを変更すると、about_Execution_Policies
+のヘルプ トピック (https://go.microsoft.com/fwlink/?LinkID=135170)
+で説明されているセキュリティ上の危険にさらされる可能性があります。実行ポリシーを変更しますか?
+[Y] はい(Y)  [A] すべて続行(A)  [N] いいえ(N)  [L] すべて無視(L)  [S] 中断(S)  [?] ヘルプ (既定値は "N"): Y
+PS C:\WINDOWS\system32> E:\UmaData\investigate_umaconn.ps1
+発生場所 E:\UmaData\investigate_umaconn.ps1:136 文字:43
++         Where-Object { $_.Name -notmatch "^(GetType|GetHashCode|ToStr ...
++                                           ~
+式またはステートメントのトークン '^' を使用できません。
+発生場所 E:\UmaData\investigate_umaconn.ps1:148 文字:1
++ } catch {
++ ~
+式またはステートメントのトークン '}' を使用できません。
+    + CategoryInfo          : ParserError: (:) [], ParseException
+    + FullyQualifiedErrorId : UnexpectedToken
+
+PS C:\WINDOWS\system32> Write-Host "========================================" -ForegroundColor Cyan
+========================================
+PS C:\WINDOWS\system32> Write-Host "UmaConn API 調査開始" -ForegroundColor Cyan
+UmaConn API 調査開始
+PS C:\WINDOWS\system32> Write-Host "========================================" -ForegroundColor Cyan
+========================================
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host "[1] レジストリ調査（COM登録パス）" -ForegroundColor Yellow
+[1] レジストリ調査（COM登録パス）
+PS C:\WINDOWS\system32> Write-Host "-----------------------------------"
+-----------------------------------
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> $comPaths = @(
+>>     "HKLM:\SOFTWARE\Classes\NVDTLabLib.NVLink",
+>>     "HKLM:\SOFTWARE\Classes\CLSID",
+>>     "HKLM:\SOFTWARE\WOW6432Node\Classes\NVDTLabLib.NVLink"
+>> )
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> foreach ($path in $comPaths) {
+>>     if (Test-Path $path) {
+>>         Write-Host " 発見: $path" -ForegroundColor Green
+>>         Get-ItemProperty -Path $path -ErrorAction SilentlyContinue | Format-List
+>>
+>>         $clsid = (Get-ItemProperty -Path "$path\CLSID" -ErrorAction SilentlyContinue).'(default)'
+>>         if ($clsid) {
+>>             Write-Host "  CLSID: $clsid" -ForegroundColor Cyan
+>>
+>>             $clsidPath = "HKLM:\SOFTWARE\Classes\CLSID\$clsid\InprocServer32"
+>>             if (Test-Path $clsidPath) {
+>>                 $dllPath = (Get-ItemProperty -Path $clsidPath).'(default)'
+>>                 Write-Host "  DLLパス: $dllPath" -ForegroundColor Cyan
+>>
+>>                 if ($dllPath) {
+>>                     $installDir = Split-Path $dllPath -Parent
+>>                     Write-Host "  推定インストールフォルダ: $installDir" -ForegroundColor Green
+>>                     $global:UmaConnInstallDir = $installDir
+>>                 }
+>>             }
+>>         }
+>>     }
+>> }
+ 発見: HKLM:\SOFTWARE\Classes\NVDTLabLib.NVLink
+
+
+(default)    : NVLink Class
+PSPath       : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\NVDTLabLib.NVLink
+PSParentPath : Microsoft.PowerShell.Core\Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes
+PSChildName  : NVDTLabLib.NVLink
+PSDrive      : HKLM
+PSProvider   : Microsoft.PowerShell.Core\Registry
+
+
+
+  CLSID: {F726BBA6-5784-4529-8C67-26E152D49D73}
+ 発見: HKLM:\SOFTWARE\Classes\CLSID
+  CLSID: {0000031A-0000-0000-C000-000000000046}
+  DLLパス: combase.dll
+  推定インストールフォルダ:
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "[2] ドキュメントファイル検索" -ForegroundColor Yellow
+[2] ドキュメントファイル検索
+PS C:\WINDOWS\system32> Write-Host "-----------------------------------"
+-----------------------------------
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> $searchPaths = @(
+>>     "C:\Program Files",
+>>     "C:\Program Files (x86)",
+>>     "C:\UmaConn",
+>>     "C:\NVDT",
+>>     "E:\UmaConn",
+>>     "E:\NVDT"
+>> )
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> if ($global:UmaConnInstallDir) {
+>>     $searchPaths += $global:UmaConnInstallDir
+>> }
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> $docExtensions = @("*.chm", "*.pdf", "*.html", "*.htm", "*.txt", "*.doc", "*.docx")
+PS C:\WINDOWS\system32> $foundDocs = @()
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> foreach ($searchPath in $searchPaths) {
+>>     if (Test-Path $searchPath) {
+>>         Write-Host "検索中: $searchPath" -ForegroundColor Gray
+>>
+>>         foreach ($ext in $docExtensions) {
+>>             $files = Get-ChildItem -Path $searchPath -Filter $ext -Recurse -ErrorAction SilentlyContinue -Depth 3 | Where-Object { $_.Name -match "(umaconn|nvdt|nvlink|manual|api|readme|help)" }
+>>
+>>             foreach ($file in $files) {
+>>                 Write-Host "   発見: $($file.FullName)" -ForegroundColor Green
+>>                 $foundDocs += $file.FullName
+>>             }
+>>         }
+>>     }
+>> }
+検索中: C:\Program Files
+   発見: C:\Program Files\7-Zip\readme.txt
+   発見: C:\Program Files\Android\Android Studio\license\javahelp_license.txt
+検索中: C:\Program Files (x86)
+   発見: C:\Program Files (x86)\BBSS\Internet SagiWall\readme.txt
+   発見: C:\Program Files (x86)\egg\manualinstall.txt
+   発見: C:\Program Files (x86)\egg\readme.txt
+   発見: C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\README.TXT
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> if ($foundDocs.Count -eq 0) {
+>>     Write-Host "   ドキュメントファイルが見つかりませんでした" -ForegroundColor Red
+>> } else {
+>>     Write-Host ""
+>>     Write-Host "発見したドキュメント:" -ForegroundColor Cyan
+>>     $foundDocs | ForEach-Object { Write-Host "  - $_" -ForegroundColor White }
+>> }
+
+発見したドキュメント:
+  - C:\Program Files\7-Zip\readme.txt
+  - C:\Program Files\Android\Android Studio\license\javahelp_license.txt
+  - C:\Program Files (x86)\BBSS\Internet SagiWall\readme.txt
+  - C:\Program Files (x86)\egg\manualinstall.txt
+  - C:\Program Files (x86)\egg\readme.txt
+  - C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\README.TXT
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "[3] COMオブジェクト解析（メソッド一覧）" -ForegroundColor Yellow
+[3] COMオブジェクト解析（メソッド一覧）
+PS C:\WINDOWS\system32> Write-Host "-----------------------------------"
+-----------------------------------
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> try {
+>>     $nvlink = New-Object -ComObject "NVDTLabLib.NVLink"
+>>     Write-Host " NVLink COMオブジェクト生成成功" -ForegroundColor Green
+>>     Write-Host ""
+>>
+>>     Write-Host "【利用可能なメソッド一覧】" -ForegroundColor Cyan
+>>     $methods = $nvlink | Get-Member -MemberType Method | Where-Object { $_.Name -notlike "GetType" -and $_.Name -notlike "GetHashCode" -and $_.Name -notlike "ToString" -and $_.Name -notlike "Equals" }
+>>     $methods | Select-Object Name, Definition | Format-Table -AutoSize
+>>
+>>     Write-Host ""
+>>     Write-Host "【利用可能なプロパティ一覧】" -ForegroundColor Cyan
+>>     $properties = $nvlink | Get-Member -MemberType Property
+>>     $properties | Select-Object Name, Definition | Format-Table -AutoSize
+>>
+>>     $outputFile = "E:\UmaData\umaconn_api_methods.txt"
+>>     "========================================" | Out-File $outputFile -Encoding UTF8
+>>     "UmaConn API メソッドプロパティ一覧" | Out-File $outputFile -Append -Encoding UTF8
+>>     "生成日時: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File $outputFile -Append -Encoding UTF8
+>>     "========================================" | Out-File $outputFile -Append -Encoding UTF8
+>>     "" | Out-File $outputFile -Append -Encoding UTF8
+>>
+>>     "【メソッド一覧】" | Out-File $outputFile -Append -Encoding UTF8
+>>     $methods | Select-Object Name, Definition | Out-File $outputFile -Append -Encoding UTF8 -Width 200
+>>
+>>     "" | Out-File $outputFile -Append -Encoding UTF8
+>>     "【プロパティ一覧】" | Out-File $outputFile -Append -Encoding UTF8
+>>     $properties | Select-Object Name, Definition | Out-File $outputFile -Append -Encoding UTF8 -Width 200
+>>
+>>     Write-Host " 結果を保存しました: $outputFile" -ForegroundColor Green
+>>
+>> } catch {
+>>     Write-Host " COMオブジェクト生成失敗: $_" -ForegroundColor Red
+>> }
+ COMオブジェクト生成失敗: CLSID {F726BBA6-5784-4529-8C67-26E152D49D73} を含むコンポーネントの COM クラス ファクトリを取 得中に、次のエラーが発生しました: 80040154 クラスが登録されていません (HRESULT からの例外:0x80040154 (REGDB_E_CLASSNOTREG))。
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "[4] タイプライブラリ（.tlb）検索" -ForegroundColor Yellow
+[4] タイプライブラリ（.tlb）検索
+PS C:\WINDOWS\system32> Write-Host "-----------------------------------"
+-----------------------------------
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> $tlbFiles = @()
+PS C:\WINDOWS\system32> foreach ($searchPath in $searchPaths) {
+>>     if (Test-Path $searchPath) {
+>>         $files = Get-ChildItem -Path $searchPath -Filter "*.tlb" -Recurse -ErrorAction SilentlyContinue -Depth 3 | Where-Object { $_.Name -match "(umaconn|nvdt|nvlink)" }
+>>         $tlbFiles += $files
+>>     }
+>> }
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> if ($tlbFiles.Count -gt 0) {
+>>     Write-Host " タイプライブラリ発見:" -ForegroundColor Green
+>>     $tlbFiles | ForEach-Object { Write-Host "  - $($_.FullName)" -ForegroundColor White }
+>> } else {
+>>     Write-Host "  タイプライブラリが見つかりませんでした" -ForegroundColor Gray
+>> }
+  タイプライブラリが見つかりませんでした
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "[5] サンプルコード検索" -ForegroundColor Yellow
+[5] サンプルコード検索
+PS C:\WINDOWS\system32> Write-Host "-----------------------------------"
+-----------------------------------
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> $codeExtensions = @("*.vbs", "*.vba", "*.bas", "*.py", "*.js")
+PS C:\WINDOWS\system32> $foundSamples = @()
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> foreach ($searchPath in $searchPaths) {
+>>     if (Test-Path $searchPath) {
+>>         foreach ($ext in $codeExtensions) {
+>>             $files = Get-ChildItem -Path $searchPath -Filter $ext -Recurse -ErrorAction SilentlyContinue -Depth 3 | Where-Object { $_.Name -match "(sample|example|demo|test)" }
+>>
+>>             foreach ($file in $files) {
+>>                 $content = Get-Content $file.FullName -ErrorAction SilentlyContinue -Raw
+>>                 if ($content -match "NVLink|UmaConn|NVDTLabLib") {
+>>                     Write-Host "   発見: $($file.FullName)" -ForegroundColor Green
+>>                     $foundSamples += $file.FullName
+>>                 }
+>>             }
+>>         }
+>>     }
+>> }
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> if ($foundSamples.Count -eq 0) {
+>>     Write-Host "  サンプルコードが見つかりませんでした" -ForegroundColor Gray
+>> }
+  サンプルコードが見つかりませんでした
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "========================================" -ForegroundColor Cyan
+========================================
+PS C:\WINDOWS\system32> Write-Host "調査完了" -ForegroundColor Cyan
+調査完了
+PS C:\WINDOWS\system32> Write-Host "========================================" -ForegroundColor Cyan
+========================================
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "次のステップ:" -ForegroundColor Yellow
+次のステップ:
+PS C:\WINDOWS\system32> Write-Host "1. E:\UmaData\umaconn_api_methods.txt を確認してメソッド一覧を確認" -ForegroundColor White
+1. E:\UmaData\umaconn_api_methods.txt を確認してメソッド一覧を確認
+PS C:\WINDOWS\system32> Write-Host "2. 発見したドキュメントファイルを開いて詳細を確認" -ForegroundColor White
+2. 発見したドキュメントファイルを開いて詳細を確認
+PS C:\WINDOWS\system32> Write-Host "3. サンプルコードがあれば参考にして実装" -ForegroundColor White
+3. サンプルコードがあれば参考にして実装
+PS C:\WINDOWS\system32> # 32-bit PowerShellを起動
+PS C:\WINDOWS\system32> C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe
+Windows PowerShell
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+新機能と改善のために最新の PowerShell をインストールしてください!https://aka.ms/PSWindows
+
+PS C:\WINDOWS\system32> # COMオブジェクトを生成してメソッド一覧を取得
+PS C:\WINDOWS\system32> $nvlink = New-Object -ComObject "NVDTLabLib.NVLink"
+PS C:\WINDOWS\system32> $nvlink | Get-Member -MemberType Method | Where-Object { $_.Name -notlike "GetType" -and $_.Name -notlike "GetHashCode" -and $_.Name -notlike "ToString" -and $_.Name -notlike "Equals" } | Select-Object Name, Definition | Format-Table -AutoSize
+
+Name              Definition
+----              ----------
+NVCancel          void NVCancel ()
+NVClose           int NVClose ()
+NVCourseFile      int NVCourseFile (string, string, string)
+NVCourseFile2     int NVCourseFile2 (string, string)
+NVFiledelete      int NVFiledelete (string)
+NVFuku            int NVFuku (string, Variant)
+NVFukuFile        int NVFukuFile (string, string)
+NVGets            int NVGets (Variant, int, string)
+NVInit            int NVInit (string)
+NVMVCheck         int NVMVCheck (string)
+NVMVOpen          int NVMVOpen (string, string)
+NVMVPlay          int NVMVPlay (string)
+NVMVPlayWithType  int NVMVPlayWithType (string, string)
+NVMVRead          int NVMVRead (string, int)
+NVOpen            int NVOpen (string, string, int, int, int, string)
+NVRead            int NVRead (string, int, string)
+NVRTOpen          int NVRTOpen (string, string)
+NVSetPayFlag      int NVSetPayFlag (int)
+NVSetSaveFlag     int NVSetSaveFlag (int)
+NVSetSavePath     int NVSetSavePath (string)
+NVSetServiceKey   int NVSetServiceKey (string)
+NVSetUIProperties int NVSetUIProperties ()
+NVSkip            void NVSkip ()
+NVStarts          int NVStarts (string, string, string, string, int, string)
+NVStatus          int NVStatus ()
+NVWatchEvent      int NVWatchEvent ()
+NVWatchEventClose int NVWatchEventClose ()
+OddsParkBet       int OddsParkBet (string, int, int, int, int, string)
+OddsParkDeposit   int OddsParkDeposit (int, string, int)
+OddsParkLogin     int OddsParkLogin (string, string)
+OddsParkLogout    int OddsParkLogout ()
+OddsParkZandaka   int OddsParkZandaka (int, int, int)
+RakutenBet        int RakutenBet (string, string, int, int, int, int, string)
+RakutenDeposit    int RakutenDeposit ()
+RakutenLogin      int RakutenLogin (string, string)
+RakutenLogout     int RakutenLogout ()
+RakutenZandaka    int RakutenZandaka (int, int, int, int, string)
+SPAT4Bet          int SPAT4Bet (string, int, int, int, int, string)
+SPAT4Deposit      int SPAT4Deposit (int, string, int)
+SPAT4Login        int SPAT4Login (string, string, string)
+SPAT4Logout       int SPAT4Logout ()
+SPAT4Zandaka      int SPAT4Zandaka (int, int, int)
+
+
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host ""
+
+PS C:\WINDOWS\system32> Write-Host "【プロパティ一覧】"
+【プロパティ一覧】
+PS C:\WINDOWS\system32> $nvlink | Get-Member -MemberType Property | Select-Object Name, Definition | Format-Table -AutoSize
+
+Name                   Definition
+----                   ----------
+m_CurrentFileTimeStamp string m_CurrentFileTimeStamp () {get}
+m_CurrentReadFilesize  int m_CurrentReadFilesize () {get}
+m_NVLinkVersion        string m_NVLinkVersion () {get}
+m_payflag              int m_payflag () {get}
+m_saveflag             int m_saveflag () {get}
+m_savepath             string m_savepath () {get}
+m_servicekey           string m_servicekey () {get}
+m_TotalReadFilesize    int m_TotalReadFilesize () {get}
+ParentHWnd             int ParentHWnd () {set}
+
+
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> # ファイルに保存
+PS C:\WINDOWS\system32> $outputFile = "E:\UmaData\umaconn_api_methods.txt"
+PS C:\WINDOWS\system32> "========================================" | Out-File $outputFile -Encoding UTF8
+PS C:\WINDOWS\system32> "UmaConn API メソッドプロパティ一覧" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> "生成日時: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> "========================================" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> "" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> "【メソッド一覧】" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> $nvlink | Get-Member -MemberType Method | Where-Object { $_.Name -notlike "GetType" -and $_.Name -notlike "GetHashCode" -and $_.Name -notlike "ToString" -and $_.Name -notlike "Equals" } | Select-Object Name, Definition | Out-File $outputFile -Append -Encoding UTF8 -Width 200
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> "" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> "【プロパティ一覧】" | Out-File $outputFile -Append -Encoding UTF8
+PS C:\WINDOWS\system32> $nvlink | Get-Member -MemberType Property | Select-Object Name, Definition | Out-File $outputFile -Append -Encoding UTF8 -Width 200
+PS C:\WINDOWS\system32>
+PS C:\WINDOWS\system32> Write-Host "結果を保存しました: $outputFile" -ForegroundColor Green
+結果を保存しました: E:\UmaData\umaconn_api_methods.txt
+PS C:\WINDOWS\system32>

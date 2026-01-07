@@ -1,0 +1,274 @@
+# -*- coding: utf-8 -*-
+"""
+Enable AI - Factor Performance Analysis FINAL (Correct Payout Columns)
+Real data analysis: Hit rate, Return rate, Profit analysis
+"""
+import psycopg2
+import pandas as pd
+import numpy as np
+
+class FactorPerformanceAnalyzer:
+    """Analyze real performance metrics for each factor"""
+    
+    def __init__(self):
+        self.conn = psycopg2.connect(
+            host='127.0.0.1',
+            port=5432,
+            database='pckeiba',
+            user='postgres',
+            password='postgres'
+        )
+        
+        # NAR tracks (Banei excluded)
+        self.nar_tracks = {
+            '30': 'Monbetsu', '35': 'Morioka', '36': 'Mizusawa', '42': 'Urawa',
+            '43': 'Funabashi', '44': 'Ooi', '45': 'Kawasaki', '46': 'Kanazawa',
+            '47': 'Kasamatsu', '48': 'Nagoya', '50': 'Sonoda', '51': 'Himeji',
+            '54': 'Kochi', '55': 'Saga'
+        }
+    
+    def load_data(self):
+        """Load NAR data with odds and payout information"""
+        nar_codes = "','".join(self.nar_tracks.keys())
+        
+        query = f"""
+        SELECT 
+            se.kaisai_nen,
+            se.kaisai_tsukihi,
+            se.keibajo_code,
+            se.race_bango,
+            se.umaban,
+            se.wakuban,
+            se.kakutei_chakujun as finish_position,
+            se.kishu_code as jockey_code,
+            se.tansho_odds as win_odds,
+            se.tansho_ninkijun as popularity,
+            se.soha_time as time_raw,
+            se.corner_1,
+            se.corner_4,
+            ra.kyori as distance,
+            ra.babajotai_code_dirt as track_condition,
+            hr.haraimodoshi_tansho_1a as win_umaban,
+            hr.haraimodoshi_tansho_1b as win_payout,
+            hr.haraimodoshi_fukusho_1a as place_1_umaban,
+            hr.haraimodoshi_fukusho_1b as place_1_payout,
+            hr.haraimodoshi_fukusho_2a as place_2_umaban,
+            hr.haraimodoshi_fukusho_2b as place_2_payout,
+            hr.haraimodoshi_fukusho_3a as place_3_umaban,
+            hr.haraimodoshi_fukusho_3b as place_3_payout
+        FROM nvd_se se
+        LEFT JOIN nvd_ra ra 
+            ON se.kaisai_nen = ra.kaisai_nen
+            AND se.kaisai_tsukihi = ra.kaisai_tsukihi
+            AND se.keibajo_code = ra.keibajo_code
+            AND se.race_bango = ra.race_bango
+        LEFT JOIN nvd_hr hr
+            ON se.kaisai_nen = hr.kaisai_nen
+            AND se.kaisai_tsukihi = hr.kaisai_tsukihi
+            AND se.keibajo_code = hr.keibajo_code
+            AND se.race_bango = hr.race_bango
+        WHERE se.keibajo_code IN ('{nar_codes}')
+            AND se.kakutei_chakujun IS NOT NULL
+            AND se.kakutei_chakujun != '00'
+            AND se.kaisai_nen >= '2023'
+        ORDER BY se.kaisai_tsukihi, se.keibajo_code, se.race_bango, se.umaban
+        """
+        
+        print("=" * 120)
+        print("ENABLE AI - FACTOR PERFORMANCE ANALYSIS (REAL DATA, CORRECT PAYOUT)")
+        print("=" * 120)
+        print("\nLoading NAR data (2023-2026)...")
+        
+        df = pd.read_sql(query, self.conn)
+        print(f"✓ Loaded {len(df):,} records")
+        
+        return df
+    
+    def prepare_data(self, df):
+        """Prepare data for analysis"""
+        print("\nPreparing data...")
+        
+        # Win/Place flags
+        df['win'] = (df['finish_position'] == '01').astype(int)
+        df['place'] = df['finish_position'].isin(['01', '02', '03']).astype(int)
+        
+        # Odds conversion
+        df['win_odds_float'] = pd.to_numeric(df['win_odds'], errors='coerce') / 10
+        
+        # Payout conversion (correct column: 1b)
+        df['win_payout_int'] = pd.to_numeric(df['win_payout'], errors='coerce')
+        df['place_1_payout_int'] = pd.to_numeric(df['place_1_payout'], errors='coerce')
+        df['place_2_payout_int'] = pd.to_numeric(df['place_2_payout'], errors='coerce')
+        df['place_3_payout_int'] = pd.to_numeric(df['place_3_payout'], errors='coerce')
+        
+        # Match win payout with horse
+        df['my_win_payout'] = df.apply(
+            lambda row: row['win_payout_int'] if row['umaban'] == row['win_umaban'] else 0,
+            axis=1
+        )
+        
+        # Match place payout with horse
+        df['my_place_payout'] = df.apply(
+            lambda row: row['place_1_payout_int'] if row['umaban'] == row['place_1_umaban']
+            else row['place_2_payout_int'] if row['umaban'] == row['place_2_umaban']
+            else row['place_3_payout_int'] if row['umaban'] == row['place_3_umaban']
+            else 0,
+            axis=1
+        )
+        
+        # Popularity groups
+        df['popularity_int'] = pd.to_numeric(df['popularity'], errors='coerce')
+        df['popularity_group'] = df['popularity_int'].apply(
+            lambda x: '1-3番人気' if x <= 3 else '4-6番人気' if x <= 6 else '7番人気以下' if x > 6 else '不明'
+        )
+        
+        # Gate position
+        df['gate_group'] = df['wakuban'].apply(
+            lambda x: '内枠(1-3)' if x in ['1', '2', '3'] else '中枠(4-6)' if x in ['4', '5', '6'] else '外枠(7-8)' if x in ['7', '8'] else '不明'
+        )
+        
+        # Corner position
+        df['corner_1_int'] = pd.to_numeric(df['corner_1'], errors='coerce')
+        df['early_position'] = df['corner_1_int'].apply(
+            lambda x: '先行(1-3)' if pd.notna(x) and x <= 3 else '中団(4-6)' if pd.notna(x) and x <= 6 else '後方(7-)' if pd.notna(x) else '不明'
+        )
+        
+        # Distance
+        df['distance_int'] = pd.to_numeric(df['distance'], errors='coerce')
+        df['distance_group'] = df['distance_int'].apply(
+            lambda x: '短距離(~1299m)' if pd.notna(x) and x < 1300 else '中距離(1300-1599m)' if pd.notna(x) and x < 1600 else '長距離(1600m~)' if pd.notna(x) else '不明'
+        )
+        
+        # Track
+        df['track_name'] = df['keibajo_code'].map(self.nar_tracks)
+        
+        print(f"  ✓ Data prepared")
+        return df
+    
+    def calculate_metrics(self, df, group_col):
+        """Calculate performance metrics for a factor"""
+        
+        # Group analysis
+        grouped = df.groupby(group_col).agg({
+            'win': ['sum', 'count', 'mean'],
+            'place': ['sum', 'mean'],
+            'win_odds_float': 'mean',
+            'my_win_payout': 'sum',
+            'my_place_payout': 'sum'
+        }).reset_index()
+        
+        grouped.columns = [group_col, 'win_count', 'total_races', 'win_rate', 
+                          'place_count', 'place_rate', 'avg_odds', 'total_win_payout', 'total_place_payout']
+        
+        # Calculate return rates (100 yen bet per race)
+        grouped['win_return_rate'] = grouped['total_win_payout'] / (grouped['total_races'] * 100)
+        grouped['place_return_rate'] = grouped['total_place_payout'] / (grouped['total_races'] * 100)
+        
+        # Average payout when winning
+        grouped['avg_win_payout'] = grouped['total_win_payout'] / grouped['win_count']
+        grouped['avg_place_payout'] = grouped['total_place_payout'] / grouped['place_count']
+        
+        # Expected value
+        grouped['expected_value'] = grouped['win_rate'] * grouped['avg_odds'] - 1
+        
+        # Profit per 100 bets (100円×100回=10,000円投資)
+        grouped['profit_per_100_bets'] = (grouped['win_return_rate'] - 1) * 10000
+        
+        # Filter minimum sample size
+        grouped = grouped[grouped['total_races'] >= 100]
+        
+        return grouped
+    
+    def analyze_all_factors(self, df):
+        """Analyze all major factors"""
+        
+        factors = [
+            ('popularity_group', '人気'),
+            ('gate_group', '枠番'),
+            ('early_position', 'コーナー位置'),
+            ('distance_group', '距離'),
+            ('track_name', '競馬場')
+        ]
+        
+        results = {}
+        
+        for factor_col, factor_name in factors:
+            print("\n" + "=" * 120)
+            print(f"📊 FACTOR: {factor_name} ({factor_col})")
+            print("=" * 120)
+            
+            metrics = self.calculate_metrics(df, factor_col)
+            
+            # Display results
+            print(f"\n{'Category':<20} {'Races':>10} {'Win%':>8} {'Place%':>8} {'Win回収率':>12} {'複勝回収率':>12} {'100bet利益':>12} {'期待値':>10}")
+            print("-" * 120)
+            
+            for _, row in metrics.iterrows():
+                category = str(row[factor_col]) if pd.notna(row[factor_col]) else '不明'
+                print(f"{category:<20} "
+                      f"{row['total_races']:>10,.0f} "
+                      f"{row['win_rate']:>8.2%} "
+                      f"{row['place_rate']:>8.2%} "
+                      f"{row['win_return_rate']:>12.1%} "
+                      f"{row['place_return_rate']:>12.1%} "
+                      f"{row['profit_per_100_bets']:>12.0f}円 "
+                      f"{row['expected_value']:>10.3f}")
+            
+            results[factor_name] = metrics
+        
+        return results
+    
+    def generate_summary(self, results):
+        """Generate summary report"""
+        
+        print("\n" + "=" * 120)
+        print("📈 SUMMARY: TOP PERFORMING FACTORS")
+        print("=" * 120)
+        
+        print("\n🏆 Highest Win Rate:")
+        for factor_name, metrics in results.items():
+            if len(metrics) > 0:
+                top_row = metrics.nlargest(1, 'win_rate').iloc[0]
+                category = str(top_row.iloc[0]) if pd.notna(top_row.iloc[0]) else '不明'
+                print(f"  {factor_name}: {category} → {top_row['win_rate']:.2%} (回収率: {top_row['win_return_rate']:.1%})")
+        
+        print("\n💰 Highest Win Return Rate:")
+        for factor_name, metrics in results.items():
+            if len(metrics) > 0:
+                top_row = metrics.nlargest(1, 'win_return_rate').iloc[0]
+                category = str(top_row.iloc[0]) if pd.notna(top_row.iloc[0]) else '不明'
+                print(f"  {factor_name}: {category} → {top_row['win_return_rate']:.1%} (利益: {top_row['profit_per_100_bets']:.0f}円/100bet)")
+        
+        print("\n🎯 Most Profitable (Win Return Rate > 100%):")
+        for factor_name, metrics in results.items():
+            if len(metrics) > 0:
+                profitable = metrics[metrics['win_return_rate'] > 1.0]
+                if len(profitable) > 0:
+                    print(f"  {factor_name}:")
+                    for _, row in profitable.nlargest(3, 'win_return_rate').iterrows():
+                        category = str(row.iloc[0]) if pd.notna(row.iloc[0]) else '不明'
+                        print(f"    - {category}: {row['win_return_rate']:.1%} (的中率{row['win_rate']:.1%}, 利益{row['profit_per_100_bets']:.0f}円)")
+    
+    def run_analysis(self):
+        """Run complete analysis"""
+        df = self.load_data()
+        df = self.prepare_data(df)
+        results = self.analyze_all_factors(df)
+        self.generate_summary(results)
+        
+        print("\n" + "=" * 120)
+        print("✅ FACTOR PERFORMANCE ANALYSIS COMPLETED!")
+        print("=" * 120)
+        print("\nMetrics Explanation:")
+        print("  - Win%: 単勝的中率 (winning hit rate)")
+        print("  - Place%: 複勝的中率 (place hit rate, 3着以内)")
+        print("  - Win回収率: 単勝回収率 (win return rate, 100円投資での回収率)")
+        print("  - 複勝回収率: 複勝回収率 (place return rate, 100円投資での回収率)")
+        print("  - 100bet利益: 100回投票での利益 (profit per 100 bets, 10,000円投資)")
+        print("  - 期待値: 期待値 (expected value, 的中率×オッズ-1)")
+        
+        return results
+
+if __name__ == '__main__':
+    analyzer = FactorPerformanceAnalyzer()
+    results = analyzer.run_analysis()

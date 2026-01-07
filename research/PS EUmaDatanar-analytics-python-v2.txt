@@ -1,0 +1,217 @@
+PS E:\UmaData\nar-analytics-python-v2> # 既存スクリプトで kaisai を検索
+PS E:\UmaData\nar-analytics-python-v2> Get-Content create_ml_dataset_fast.py | Select-String "kaisai" | Select-Object -First 20
+
+            kaisai_nen,
+            kaisai_tsukihi,
+        WHERE kaisai_nen = %s
+        ORDER BY kaisai_tsukihi, keibajo_code, race_bango
+        kaisai_nen = race['kaisai_nen']
+        kaisai_tsukihi = race['kaisai_tsukihi']
+        kaisai_date = f"{kaisai_nen}{kaisai_tsukihi}"
+            WHERE kaisai_nen = %s
+              AND kaisai_tsukihi = %s
+        """, (kaisai_nen, kaisai_tsukihi, keibajo_code, race_bango))
+                kaisai_nen,
+                kaisai_tsukihi
+                'kaisai_date': kaisai_date,
+
+
+PS E:\UmaData\nar-analytics-python-v2> @"
+>> from sqlalchemy import create_engine, text
+>> import pandas as pd
+>>
+>> DATABASE_URL = 'postgresql+psycopg2://postgres:postgres@127.0.0.1:5432/pckeiba'
+>> NANKANTO_4_VENUES = ['42', '43', '44', '45']
+>>
+>> engine = create_engine(DATABASE_URL, echo=False)
+>>
+>> print("="*80)
+>> print("地方競馬オッズ分析: 南関東4場 vs その他競馬場")
+>> print("="*80)
+>>
+>> query = text("""
+>>     SELECT
+>>         keibajo_code,
+>>         kaisai_nen,
+>>         kaisai_tsukihi,
+>>         race_bango,
+>>         umaban,
+>>         kakutei_chakujun,
+>>         tansho_ninkijun,
+>>         tansho_odds,
+>>         fukusho_odds
+>>     FROM nvd_se
+>>     WHERE
+>>         kaisai_nen = '2024'
+>>         AND kakutei_chakujun != '0'
+>>         AND kakutei_chakujun != ''
+>>         AND keibajo_code NOT IN ('83')
+>>     LIMIT 500000;
+>> """)
+>>
+>> print("\nデータ取得中...")
+>>
+>> with engine.connect() as conn:
+>>     df = pd.read_sql_query(query, conn)
+>>
+>> print(f"取得行数: {len(df):,}行")
+>>
+>> # 数値変換
+>> df['kakutei_chakujun'] = pd.to_numeric(df['kakutei_chakujun'], errors='coerce')
+>> df['tansho_odds'] = pd.to_numeric(df['tansho_odds'], errors='coerce')
+>> df['fukusho_odds'] = pd.to_numeric(df['fukusho_odds'], errors='coerce')
+>> df['tansho_ninkijun'] = pd.to_numeric(df['tansho_ninkijun'], errors='coerce')
+>>
+>> # NaN削除
+>> df = df.dropna(subset=['kakutei_chakujun', 'tansho_odds'])
+>>
+>> print(f"有効データ: {len(df):,}行")
+>>
+>> # 南関東4場とその他に分類
+>> df['venue_group'] = df['keibajo_code'].apply(
+>>     lambda x: '南関東4場' if str(x) in NANKANTO_4_VENUES else 'その他競馬場'
+>> )
+>>
+>> # 分析
+>> for venue_group in ['南関東4場', 'その他競馬場']:
+>>     df_group = df[df['venue_group'] == venue_group]
+>>     df_1chaku = df_group[df_group['kakutei_chakujun'] == 1]
+>>
+>>     print(f"\n{'='*80}")
+>>     print(f"{venue_group} オッズ分析")
+>>     print(f"{'='*80}")
+>>     print(f"総出走頭数: {len(df_group):,}頭")
+>>
+>>     if len(df_1chaku) > 0:
+>>         avg_tansho = df_1chaku['tansho_odds'].mean()
+>>         avg_fukusho = df_1chaku['fukusho_odds'].mean()
+>>
+>>         print(f"1着馬の平均単勝オッズ: {avg_tansho:.2f}倍")
+>>         print(f"1着馬の平均複勝オッズ: {avg_fukusho:.2f}倍")
+>>
+>>         # 人気順別
+>>         print(f"\n人気順別 平均単勝オッズ（上位5番人気）:")
+>>         for ninkijun in range(1, 6):
+>>             df_ninki = df_group[df_group['tansho_ninkijun'] == ninkijun]
+>>             if len(df_ninki) > 0:
+>>                 avg_odds = df_ninki['tansho_odds'].mean()
+>>                 print(f"  {ninkijun}番人気: {avg_odds:6.2f}倍 ({len(df_ninki):,}頭)")
+>>
+>> engine.dispose()
+>> print("\n" + "="*80)
+>> print("オッズ分析完了")
+>> print("="*80)
+>> "@ | Out-File -FilePath "analyze_odds_simple.py" -Encoding UTF8
+PS E:\UmaData\nar-analytics-python-v2>
+PS E:\UmaData\nar-analytics-python-v2> C:\Users\ihaji\AppData\Local\Programs\Python\Python314\python.exe analyze_odds_simple.py
+================================================================================
+地方競馬オッズ分析: 南関東4場 vs その他競馬場
+================================================================================
+
+データ取得中...
+Traceback (most recent call last):
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.errors.UndefinedColumn: 列"fukusho_odds"は存在しません
+LINE 11:         fukusho_odds
+                 ^
+
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "E:\UmaData\nar-analytics-python-v2\analyze_odds_simple.py", line 36, in <module>
+    df = pd.read_sql_query(query, conn)
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\pandas\io\sql.py", line 528, in read_sql_query
+    return pandas_sql.read_query(
+           ~~~~~~~~~~~~~~~~~~~~~^
+        sql,
+        ^^^^
+    ...<6 lines>...
+        dtype_backend=dtype_backend,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\pandas\io\sql.py", line 1848, in read_query
+    result = self.execute(sql, params)
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\pandas\io\sql.py", line 1672, in execute
+    return self.con.execute(sql, *args)
+           ~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+        self,
+        distilled_parameters,
+        execution_options or NO_OPTIONS,
+    )
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        self, distilled_params, execution_options
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+        dialect,
+    ...<8 lines>...
+        cache_hit=cache_hit,
+    )
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^
+        dialect, context, statement, parameters
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        e, str_statement, effective_parameters, cursor, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+    ~~~~~~~~~~~~~~~~~~~~~~~^
+        cursor, str_statement, effective_parameters, context
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ihaji\AppData\Local\Programs\Python\Python314\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+    ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+sqlalchemy.exc.ProgrammingError: (psycopg2.errors.UndefinedColumn) 列"fukusho_odds"は存在しません
+LINE 11:         fukusho_odds
+                 ^
+
+[SQL:
+    SELECT
+        keibajo_code,
+        kaisai_nen,
+        kaisai_tsukihi,
+        race_bango,
+        umaban,
+        kakutei_chakujun,
+        tansho_ninkijun,
+        tansho_odds,
+        fukusho_odds
+    FROM nvd_se
+    WHERE
+        kaisai_nen = '2024'
+        AND kakutei_chakujun != '0'
+        AND kakutei_chakujun != ''
+        AND keibajo_code NOT IN ('83')
+    LIMIT 500000;
+]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+PS E:\UmaData\nar-analytics-python-v2>

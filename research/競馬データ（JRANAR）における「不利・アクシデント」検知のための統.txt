@@ -1,0 +1,182 @@
+競馬データ（JRA/NAR）における「不利・アクシデント」検知のための統計的異常値検出フレームワーク：理論、実装、および評価1. 序論：競馬分析における「不可視の変数」とその重要性現代のスポーツアナリティクス、とりわけ競馬予測の領域において、データモデリングの精度を決定づける最大の要因は、アルゴリズムの複雑さではなく「データの質」にある。競馬は、生物学的限界、物理的干渉、そして不確定要素が複雑に絡み合うカオス的な系である。この系において、最もノイズとなり、かつ最大のアルファ（超過収益）の源泉となるのが「不利（Disadvantage）」および「アクシデント」の存在である。一般に公開される着順や走破タイムといった確定データ（Structured Data）は、結果としての事実を記述しているに過ぎない。ある馬が12着に敗れたという事実は、その馬の能力が不足していたのか、あるいは直線で進路を塞がれる致命的な不利（どん詰まり）を受けたのか、あるいはスタートで躓いたのかという「プロセス」を説明しない。JRA（日本中央競馬会）やNAR（地方競馬全国協会）が提供する公式データには、審議対象となった重大な事象を除き、これらの微細な不利は定量データとして記録されないことが多い。本報告書は、NAR-SI Ver.4.0やJRA-VAN/Target Frontier JVといった日本の競馬データ環境を前提とし、統計的異常値検出（Anomaly Detection）の手法を用いて、これらの「隠れた不利」を数学的に特定するための包括的なフレームワークを提案するものである。単変量のZスコア分析から、深層学習を用いた時系列再構成モデルまで、多角的なアプローチを体系化し、PythonおよびSQLによる実装コードと共に詳述する。2. JRA/NARにおける「不利」の定義と判定基準の変遷統計モデルを構築する前に、検出対象となる「不利」の法的・競技的な定義を明確にする必要がある。ここでの定義が、教師あり学習におけるラベル生成や、教師なし学習における評価指標の基盤となるからである。2.1 裁決基準の厳格化と「隠れ不利」の増加日本の競馬における「走行妨害（Interference）」の判定基準は、2013年に大きな転換点を迎えた。2.1.1 降着・失格基準の変更（カテゴリー1からカテゴリー2へ）2013年以前、JRA/NARは「その妨害がなければ被害馬が先着していたか否か」に関わらず、加害馬が被害馬の走行を妨害した場合、被害馬の着順より後ろに降着させるという厳格なルール（カテゴリー1に近い運用）を採用していた。しかし、国際的なルールの調和（ハーモナイゼーション）を目的として、2013年より「その走行妨害がなければ、被害馬が加害馬より先着していたと認められる場合に限り、加害馬を被害馬の後ろに降着させる」という新基準（カテゴリー2）へ移行した1。2.1.2 データ分析への影響このルール変更は、データ分析の観点から極めて重大な意味を持つ。公式記録の減少: 以前なら「降着」として記録された事象が、新ルール下では「戒告」や「過怠金」等の騎手制裁に留まり、着順変更（＝公式データ上のフラグ）が発生しないケースが増加した。隠れ不利の増大: 「着順を変更するほどではないが、確実にパフォーマンスを低下させた不利」が、公式成績データ上では「何事もなく敗北した」ように見えるようになった。したがって、現在のJRA/NARデータ環境においては、公式の「制裁」フラグのみに依存したモデルは、実態としての不利を大幅に過小評価することになる。統計的アプローチによる「推定不利」の特定が不可欠となる所以である。2.2 不利の分類学（Taxonomy of Disadvantages）異常検知アルゴリズムを適切に選択するため、不利をその発生メカニズムに基づいて分類する。分類事象例（日本語）英語表記特徴的なデータ挙動推奨検知手法始動期出遅れ、躓き、煽りLate Start, Stumbleテン3Fタイムの著しい遅延、後方からの位置取りZスコア、四分位範囲 (IQR)巡航期掛かる、接触、外々回るOver-racing, Bump, Wide Tripコーナー通過順位の不自然な変動、走行距離の増大軌跡分析、DTW、pgvector勝負所壁（どん詰まり）、挟まる、手綱を引くBlocked, Checked, Squeezed加速区間での減速、急激なラップタイムの低下LSTM Autoencoder、Rank Reversal身体的故障、鼻出血、心房細動Breakdown, Bleeding競走中止、あるいは極端な失速（タイムオーバー）変化点検知 (Change Point Detection)3. データアーキテクチャと前処理：NAR-SI/JRA-VANの構造化異常検知の精度は、特徴量エンジニアリングの質に依存する。ここでは、NARおよびJRAのデータ仕様に即した前処理手法を定義する。3.1 NAR-SI Ver.4.0 とコーナー通過順位のパース地方競馬（NAR）のデータにおいて、レース中の位置取りを示す「コーナー通過順位（Corner Passage Order）」は、最も情報量の多い特徴量の一つである。しかし、このデータは多くの場合、可変長の文字列として提供される。3.1.1 文字列構造の複雑性コーナー通過順位は 1-1-1-1 のような単純な形式だけでなく、馬群の密集度合いを示す括弧付きの表現が存在する。例: 5-5(2,8)4-4意味: 第1コーナー5番手、第2コーナー5番手、第3コーナーで2番と8番と並走、第4コーナー4番手。この文字列を数値ベクトル化し、時系列データとして扱えるように正規化する必要がある。3.1.2 Pythonによるパーサー実装以下に、複雑なコーナー通過順位文字列を解析し、各コーナーにおける自身の順位を抽出するPythonコードを示す。Pythonimport re
+import numpy as np
+
+def parse_nar_corner_string(corner_str, my_horse_num):
+    """
+    NAR形式のコーナー通過順位文字列を解析し、自馬の順位推移をリストで返す。
+    
+    Args:
+        corner_str (str): 例 "05-05-(02,08)-04"
+        my_horse_num (int): 自馬の馬番
+        
+    Returns:
+        list: [c1_rank, c2_rank, c3_rank, c4_rank] (欠損はnp.nan)
+    """
+    if not isinstance(corner_str, str):
+        return [np.nan] * 4
+
+    # 括弧内の処理: 並走を表す括弧を外してフラットにする処理が必要だが、
+    # NARデータでは「通過順」そのものが記録されていることが多い。
+    # ここでは簡易的にハイフン区切りでステップごとの順位グループを取得する。
+    
+    # 注意: 実際のデータでは自馬の順位が明示されていない場合、
+    # 通過順位文字列内の馬番を探索する必要がある。
+    # 例: "1,2,3-1,2,3" の場合、馬番1は1位。
+    
+    # ステップごとに分割
+    steps = re.split(r'[-]', corner_str)
+    my_ranks =
+    
+    for step in steps:
+        # 括弧を除去し、カンマで分割して馬番リストを作成
+        cleaned_step = re.sub(r'[\(\)]', '', step)
+        try:
+            horses_in_step = [int(h) for h in cleaned_step.split(',') if h.strip().isdigit()]
+            
+            if my_horse_num in horses_in_step:
+                # その集団の中に自馬がいれば、その集団の先頭順位〜最後尾順位の平均、
+                # あるいは順位そのものを計算するロジックが必要。
+                # ここでは単純化のため「その集団が登場したインデックス+1」とする
+                # 実際には、前の集団の馬数を累積する必要がある。
+                pass 
+            else:
+                pass
+        except ValueError:
+            my_ranks.append(np.nan)
+            
+    # ※ 実装上の注意:
+    # NARのコーナー通過順は「順位そのもの」ではなく「馬番の羅列」であることが多い。
+    # したがって、自馬の馬番がリストの何番目にあるかを計算する必要がある。
+    
+    full_ranks =
+    cumulative_count = 1
+    
+    # 再実装: 馬番リストとしての解析
+    steps = corner_str.split('-')
+    for step in steps:
+        # 括弧処理: (2,8)のような並走は同一順位とみなすなどの処理
+        # ここでは正規表現で馬番を抽出
+        horses = re.findall(r'\d+', step)
+        horses = [int(h) for h in horses]
+        
+        if my_horse_num in horses:
+            # 自馬が見つかった場合、その順位を特定
+            # 単純なインデックスではなく、これまでの馬数を考慮
+            rank = cumulative_count + horses.index(my_horse_num)
+            full_ranks.append(rank)
+        else:
+            full_ranks.append(np.nan) # 見つからない場合（周回遅れ等）
+        
+        # 次のコーナーのために通過頭数を加算（これは通過順データの場合）
+        # ※ データ形式が「順位」そのものの場合は、単にその数値を抽出する
+        
+    return full_ranks
+※ 補足: NAR-SIの仕様では、通過順位が馬番で記述されている場合と、単に自分の通過順位（数値）のみが記録されているテーブルが存在する。異常検知においては、**「全馬の相対位置」**が重要であるため、レース全体の通過順文字列（馬番の羅列）を解析し、相対的な位置関係（誰の後ろにいたか）をマトリックス化することが望ましい。3.2 補正タイムと基準タイムの正規化JRA-VANデータには「基準タイム」や「補正タイム」が存在するが、異常検知の文脈では、これらをそのまま使用するのではなく、**レース内偏差値（Zスコア）**に変換して使用する。馬場差の吸収: 不良馬場での遅いタイムと、良馬場での速いタイムを直接比較してはならない。異常検知は「そのレースの中での特異点」を探す作業であるため、レースごとの平均と標準偏差を用いた標準化（Standardization）が必須となる。4. 統計的異常検知の手法（Univariate Approaches）ここでは、単一の変数（例：スタート時間、上がり3Fタイム）に注目した古典的かつ堅牢な統計手法を解説する。4.1 Zスコアとロバスト統計（MAD）最も基本的な手法は、正規分布を仮定したZスコアである。$$Z = \frac{x - \mu}{\sigma}$$しかし、競馬データは外れ値（大差勝ちや競走中止）を含むため、平均（$\mu$）や標準偏差（$\sigma$）が汚染されやすい。よりロバスト（頑健）な指標として、**中央値絶対偏差（MAD: Median Absolute Deviation）**を用いたModified Z-scoreの使用を推奨する2。$$MAD = \text{median}(|x_i - \tilde{x}|)$$$$M_{z} = \frac{0.6745(x_i - \tilde{x})}{MAD}$$ここで、$\tilde{x}$は中央値である。4.1.1 実装シナリオ：出遅れ（Late Start）の検知出遅れは、レース前半（テン3F）のタイムに顕著に表れる。しかし、逃げ馬と追い込み馬では「正常な」前半タイムが異なる。脚質別グルーピング: 全出走馬を脚質（逃げ・先行・差し・追込）で層別化する。層別MADの計算: 各脚質グループ内で、前半3FタイムのMADを計算する。異常判定: $M_{z} > 3.5$ （極端に遅い）場合、「出遅れ」または「意図的な後方待機失敗」と判定する。4.1.2 SQLによる実装（PostgreSQL / TimescaleDB）PostgreSQLのウィンドウ関数を用いれば、データベース層で高速にこの計算が可能である4。SQLWITH Stats AS (
+    SELECT 
+        race_id,
+        running_style, -- 脚質
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY first_3f_time) AS median_val
+    FROM race_results
+    GROUP BY race_id, running_style
+),
+MAD_Calc AS (
+    SELECT 
+        r.race_id,
+        r.horse_id,
+        r.first_3f_time,
+        ABS(r.first_3f_time - s.median_val) as abs_dev,
+        s.median_val
+    FROM race_results r
+    JOIN Stats s ON r.race_id = s.race_id AND r.running_style = s.running_style
+),
+MAD_Stats AS (
+    SELECT 
+        race_id,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY abs_dev) AS mad_val
+    FROM MAD_Calc
+    GROUP BY race_id
+)
+SELECT 
+    m.race_id,
+    m.horse_id,
+    (0.6745 * (m.first_3f_time - m.median_val)) / NULLIF(ms.mad_val, 0) as modified_z_score
+FROM MAD_Calc m
+JOIN MAD_Stats ms ON m.race_id = ms.race_id
+WHERE (0.6745 * (m.first_3f_time - m.median_val)) / NULLIF(ms.mad_val, 0) > 3.5;
+5. 順位変動と時系列解析（Multivariate Approaches）レース中の「不利」の多く（詰まり、接触）は、単一のタイムではなく、順位の不自然な変動（Rank Reversal）や軌跡の乱れとして観測される。5.1 順位逆転検知（Rank Reversal Detection）通常、レースの順位変動にはある程度の連続性がある。徐々に順位を上げるか、バテて下がるかである。短期間（コーナー間）での激しい順位の上下動は、物理的な干渉を示唆する6。5.1.1 ケンドールの順位相関係数（Kendall's Tau）ある区間（例：第3コーナーから第4コーナー）における全馬の順位変動の相関を計算する8。$$\tau = \frac{C - D}{\frac{1}{2}n(n-1)}$$$C$: 順位関係が一致しているペア数（Concordant pairs）$D$: 順位関係が逆転したペア数（Discordant pairs）検知ロジック:レース全体の$\tau$が高い（0.8以上＝隊列が安定的）にも関わらず、特定の馬だけが大きく順位を下げている場合、その馬は「壁」や「故障」の影響を受けた可能性が高い。逆に、レース全体の$\tau$が低い（0.3以下）場合、レース自体が乱ペース（Hペースまたは超スロー）であり、個別の不利特定は困難である。5.2 軌跡の類似度検索（Trajectory Analysis with pgvector）もしGPSトラッキングデータや、コーナーごとの詳細な位置取りデータが利用可能であれば、**動的時間伸縮法（DTW: Dynamic Time Warping）**やベクトル類似度検索を用いて、「理想的な走行ライン」からの逸脱を検知できる9。5.2.1 ベクトルデータベース（pgvector）の活用各馬のレース展開をベクトル（例：100次元の時系列位置データ）として表現し、PostgreSQLのpgvector拡張を用いて、勝馬の軌跡との類似度（コサイン類似度やL2距離）を計算する。仮説: 勝利馬や上位入線馬の軌跡は「最適解」に近い。この最適軌跡から、ユークリッド距離ではなくDTW距離で大きく乖離している（特に外側へ）馬は、「外々を回らされた（Wide Trip）」という不利を受けた可能性が高い。SQL-- pgvectorを用いた軌跡類似度の計算イメージ
+SELECT 
+    horse_id, 
+    trajectory <-> (SELECT trajectory FROM races WHERE rank=1 AND race_id=?) AS distance
+FROM races 
+WHERE race_id =? 
+ORDER BY distance DESC;
+距離が極端に大きい馬は、トラックバイアスに逆らったか、コーナーで膨れる不利を受けている。6. 機械学習・深層学習による異常検知モデルルールベースの統計手法では捉えきれない複雑なパターン（例：スローペースでの詰まり）を検知するため、機械学習モデルを導入する。6.1 Isolation Forest（孤立森）による多変量異常検知Isolation Forestは、正常なデータは密集しており、異常なデータは「孤立」しやすいという特性を利用する11。教師データ（不利ラベル）が少ない競馬データにおいて、教師なし学習として極めて有効である。6.1.1 特徴量エンジニアリングモデルに入力する特徴量は、物理的な矛盾を捉えるものを設計する。期待値ギャップ: (単勝オッズランク - 実際の着順)順位ボラティリティ: コーナーごとの順位変動の標準偏差。ラスト3F乖離率: レース全体の上がり平均との差。6.1.2 Python実装（PyODライブラリ）Pythonimport pandas as pd
+from pyod.models.iforest import IForest
+from sklearn.preprocessing import StandardScaler
+
+def detect_anomalies_iforest(df_race):
+    """
+    Isolation Forestを用いたレース内異常検知
+    """
+    # 特徴量選択
+    features = [
+        'log_odds',           # オッズ（対数）
+        'rank_volatility',    # 順位変動の激しさ
+        'last_3f_z_score',    # 上がり3FのZスコア
+        'corner_1_4_diff'     # 最初と最後の位置取りの差
+    ]
+    
+    X = df_race[features].fillna(0)
+    
+    # 標準化
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # モデル定義（contaminationは異常値の割合予測、例えば5%）
+    clf = IForest(contamination=0.05, random_state=42)
+    clf.fit(X_scaled)
+    
+    # 異常スコアとラベルの取得
+    # スコアが高いほど異常度が高い
+    scores = clf.decision_scores_
+    labels = clf.predict(X_scaled)  # 1: Outlier, 0: Inlier
+    
+    df_race['anomaly_score'] = scores
+    df_race['is_anomaly'] = labels
+    
+    return df_race
+6.2 LSTM Autoencoderによる時系列再構成深層学習、特にLSTM（Long Short-Term Memory）を用いたAutoencoderは、時系列データの「正常なパターン」を学習し、そこからの再構成誤差（Reconstruction Error）を異常スコアとして利用する手法である13。これは韓国馬事会（KRA）の研究でも不正検知に応用されている。6.2.1 モデルアーキテクチャ学習データ: 「不利なし（No Comments）」と判定された正常なレースのラップタイム推移（200mごとのスプリットタイム）。エンコーダ: 時系列データを低次元の潜在ベクトルに圧縮。デコーダ: 潜在ベクトルから元の時系列を復元。異常判定: テストデータの再構成誤差（MSE）が閾値を超えた場合、そのペース配分は「物理的に不自然（＝アクシデント）」とみなす。6.2.2 適用事例：どん詰まり（Blocked）の検知「どん詰まり」の馬は、直線入り口で急減速し、進路が開いた瞬間に急加速するという特異な波形（V字型の速度変化）を示す。正常な疲労パターン（単調減少または緩やかな減少）しか学習していないAutoencoderは、このV字パターンを再現できず、高い誤差を出力する。これにより、映像を見ずとも「不可解な減速」を検知できる。7. 実装可能なカタログ：コードと運用フロー7.1 Python環境のセットアップ本レポートの手法を実装するために必要なライブラリ構成。Bashpip install numpy pandas scipy scikit-learn pyod tensorflow torch psycopg2 pgvector
+7.2 総合異常検知クラスの実装（スケルトン）以下は、これまでの手法を統合し、データフレームに対して「不利スコア」を付与するクラスの設計である。Pythonclass RacingAnomalyDetector:
+    def __init__(self, method='ensemble'):
+        self.method = method
+        self.iforest = IForest(contamination=0.05)
+        
+    def fit_predict(self, df):
+        # 1. 前処理：順位変動特徴量の生成
+        df = self._engineer_features(df)
+        
+        # 2. ルールベース検知（Zスコア）
+        df['start_anomaly'] = self._detect_start_delay(df)
+        
+        # 3. 機械学習検知（Isolation Forest）
+        feature_cols = ['rank_std', 'time_z', 'odds_rank_diff']
+        self.iforest.fit(df[feature_cols])
+        df['ml_anomaly_score'] = self.iforest.decision_scores_
+        
+        # 4. アンサンブル評価（ルールの重大度とMLスコアの結合）
+        df['total_disadvantage_score'] = (
+            df['start_anomaly'] * 0.3 + 
+            df['ml_anomaly_score'] * 0.7
+        )
+        return df
+
+    def _engineer_features(self, df):
+        # コーナー順位の標準偏差等を計算
+        # （省略：3.1節のロジックを使用）
+        return df
+
+    def _detect_start_delay(self, df):
+        # MADによるロバストZスコア計算
+        # （省略：4.1節のロジックを使用）
+        return z_scores
+8. 精度評価手法：教師なし学習のバリデーション「不利」の正解ラベルが存在しない（または不完全な）状況で、モデルの精度をどう評価するか。ここでは「Silver Standard（銀の基準）」アプローチを提案する。8.1 テキストマイニングによる擬似ラベル生成JRA-VANや競馬新聞の「短評」や「レース後コメント」には、不利を示唆するキーワードが含まれている15。これらを正規表現で抽出し、検証用ラベルとする。キーワード: 「不利」「詰まる」「狭くなる」「出遅れ」「接触」「煽る」「躓く」ラベル付け: これらの語が含まれるレコードを True_Anomaly とする。8.2 Precision @ K による評価異常検知では、全データの正解率（Accuracy）は無意味である（正常データが圧倒的多数のため）。代わりに、Precision @ K を用いる17。手順:モデルが算出した異常スコアの高い順にデータをソートする。上位 $K$ 件（例：100件）の中に、テキストマイニングで特定した True_Anomaly が何件含まれているかを計算する。Precision @ 100 が高ければ、モデルは「人間が認識できる不利」を正しく上位にランク付けできていることになる。8.3 未知の不利（False Positive）の価値モデルが高スコアを出したが、コメントには何も書かれていない（False Positive）ケースこそが、この分析の最大の成果物である。これらは「誰も気づいていない不利」である可能性が高く、次走での過小評価（高配当）につながる**「妙味のある馬」**の候補となる。9. 結論と展望本報告書では、JRA/NARのデータ特性に基づき、統計的異常検知を用いてレース中の不利やアクシデントを特定する手法を体系化した。Zスコア/MAD: スタートの出遅れ検知に有効。Rank Reversal: レース中の不可解な位置取りダウンの検知に有効。Isolation Forest / Autoencoder: 複合的な要因による「どん詰まり」や「故障」の検知に有効。今後の展望として、**GPSトラッキングデータ（トラッキングシステム）**の本格導入が進めば、pgvectorを用いた軌跡類似度検索の精度は飛躍的に向上するだろう。また、加速度センサーデータが利用可能になれば、躓き（Stumble）を物理的な衝撃（G）として直接検知することも可能になる13。データサイエンティストにとって、これらの「ノイズ」を「シグナル」へと変換する技術は、競馬予測モデルの精度を限界突破させるための鍵となる。免責事項: 本報告書に含まれるコードや手法は研究目的のものであり、実際の馬券購入における利益を保証するものではありません。実装に際しては、利用するデータプロバイダの規約を遵守してください。

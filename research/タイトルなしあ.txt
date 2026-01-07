@@ -1,0 +1,107 @@
+
+E:\UmaData\nar-analytics-python-v2>C:\Users\ihaji\AppData\Local\Programs\Python\Python314\python.exe tune_model_a.py
+
+================================================================================
+🔧 Model A ハイパーパラメータ調整
+================================================================================
+
+📂 訓練データ読み込み...
+   訓練サンプル: 35,080頭
+   特徴量数: 30個
+
+📂 テストデータ読み込み...
+   テストサンプル: 34,928頭
+
+================================================================================
+📊 ハイパーパラメータ調整結果
+================================================================================
+
+   パラメータセット | 訓練時間 | 単勝的中率 | 複勝的中率 | 3着内率
+   ----------------------------------------------------------------------
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.556467        train's ndcg@3: 0.605324        train's ndcg@5: 0.670963
+[100]   train's ndcg@1: 0.605433        train's ndcg@3: 0.64065 train's ndcg@5: 0.702754
+[150]   train's ndcg@1: 0.652032        train's ndcg@3: 0.67366 train's ndcg@5: 0.727867
+[200]   train's ndcg@1: 0.690241        train's ndcg@3: 0.699361        train's ndcg@5: 0.747403
+   ベースライン                         |      0.3秒 |      27.23% |      47.61% |    58.84%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.565228        train's ndcg@3: 0.614625        train's ndcg@5: 0.677845
+[100]   train's ndcg@1: 0.623844        train's ndcg@3: 0.657242        train's ndcg@5: 0.713065
+[150]   train's ndcg@1: 0.673093        train's ndcg@3: 0.690347        train's ndcg@5: 0.741293
+[200]   train's ndcg@1: 0.72064 train's ndcg@3: 0.720913        train's ndcg@5: 0.76593
+   num_leaves=18                  |      0.3秒 |      27.58% |      47.70% |    57.90%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.572813        train's ndcg@3: 0.621404        train's ndcg@5: 0.683523
+[100]   train's ndcg@1: 0.645244        train's ndcg@3: 0.667017        train's ndcg@5: 0.722679
+[150]   train's ndcg@1: 0.698471        train's ndcg@3: 0.703347        train's ndcg@5: 0.751559
+[200]   train's ndcg@1: 0.742886        train's ndcg@3: 0.735126        train's ndcg@5: 0.777671
+   num_leaves=20                  |      0.3秒 |      26.08% |      47.23% |    57.28%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.53541 train's ndcg@3: 0.594817        train's ndcg@5: 0.662811
+[100]   train's ndcg@1: 0.587628        train's ndcg@3: 0.628775        train's ndcg@5: 0.691688
+[150]   train's ndcg@1: 0.624049        train's ndcg@3: 0.656763        train's ndcg@5: 0.713741
+[200]   train's ndcg@1: 0.652635        train's ndcg@3: 0.678584        train's ndcg@5: 0.730579
+   learning_rate=0.08             |      0.3秒 |      27.01% |      47.88% |    58.18%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.520039        train's ndcg@3: 0.582917        train's ndcg@5: 0.654198
+[100]   train's ndcg@1: 0.552017        train's ndcg@3: 0.607828        train's ndcg@5: 0.675375
+[150]   train's ndcg@1: 0.586682        train's ndcg@3: 0.629854        train's ndcg@5: 0.692105
+[200]   train's ndcg@1: 0.61495 train's ndcg@3: 0.648332        train's ndcg@5: 0.707454
+   learning_rate=0.05             |      0.3秒 |      28.11% |      48.41% |    60.06%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.54376 train's ndcg@3: 0.601752        train's ndcg@5: 0.669109
+[100]   train's ndcg@1: 0.599749        train's ndcg@3: 0.640476        train's ndcg@5: 0.701158
+[150]   train's ndcg@1: 0.64894 train's ndcg@3: 0.672876        train's ndcg@5: 0.727275
+[200]   train's ndcg@1: 0.689385        train's ndcg@3: 0.699142        train's ndcg@5: 0.746633
+   min_data_in_leaf=15            |      0.3秒 |      27.83% |      48.57% |    58.03%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.545448        train's ndcg@3: 0.600264        train's ndcg@5: 0.669425
+[100]   train's ndcg@1: 0.602963        train's ndcg@3: 0.642702        train's ndcg@5: 0.703326
+[150]   train's ndcg@1: 0.646314        train's ndcg@3: 0.673509        train's ndcg@5: 0.727885
+[200]   train's ndcg@1: 0.685599        train's ndcg@3: 0.699884        train's ndcg@5: 0.746602
+   feature_fraction=0.9           |      0.3秒 |      27.73% |      47.41% |    58.18%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.555131        train's ndcg@3: 0.603419        train's ndcg@5: 0.670284
+[100]   train's ndcg@1: 0.611617        train's ndcg@3: 0.644687        train's ndcg@5: 0.70452
+[150]   train's ndcg@1: 0.653792        train's ndcg@3: 0.673015        train's ndcg@5: 0.726586
+[200]   train's ndcg@1: 0.6848  train's ndcg@3: 0.695814        train's ndcg@5: 0.745878
+   bagging_fraction=0.8           |      0.4秒 |      26.89% |      47.50% |    57.71%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.553996        train's ndcg@3: 0.602898        train's ndcg@5: 0.670927
+[100]   train's ndcg@1: 0.611783        train's ndcg@3: 0.64259 train's ndcg@5: 0.704025
+[150]   train's ndcg@1: 0.650502        train's ndcg@3: 0.672737        train's ndcg@5: 0.726735
+[200]   train's ndcg@1: 0.689238        train's ndcg@3: 0.699377        train's ndcg@5: 0.747731
+   総合調整1 (num_leaves=18, lr=0.08) |      0.3秒 |      27.83% |      47.72% |    58.84%
+Training until validation scores don't improve for 30 rounds
+[50]    train's ndcg@1: 0.54146 train's ndcg@3: 0.59634 train's ndcg@5: 0.665729
+[100]   train's ndcg@1: 0.587517        train's ndcg@3: 0.626185        train's ndcg@5: 0.688736
+[150]   train's ndcg@1: 0.624873        train's ndcg@3: 0.652659        train's ndcg@5: 0.710925
+[200]   train's ndcg@1: 0.653807        train's ndcg@3: 0.673549        train's ndcg@5: 0.728261
+   総合調整2 (num_leaves=20, lr=0.05, min_data=15) |      0.3秒 |      27.89% |      48.15% |    59.34%
+
+================================================================================
+🏆 最適パラメータの選択
+================================================================================
+
+【単勝的中率最大】
+   パラメータセット: learning_rate=0.05
+   単勝的中率: 28.11%
+   複勝的中率: 48.41%
+   3着内率: 60.06%
+
+【3着内率最大】
+   パラメータセット: learning_rate=0.05
+   単勝的中率: 28.11%
+   複勝的中率: 48.41%
+   3着内率: 60.06%
+
+✅ 目標達成！最適モデルを保存します
+   保存先: models/nar_si_model_a_optimized.pkl
+   パラメータセット: learning_rate=0.05
+   単勝的中率: 28.11%
+
+================================================================================
+✅ ハイパーパラメータ調整完了
+================================================================================
+
+E:\UmaData\nar-analytics-python-v2>

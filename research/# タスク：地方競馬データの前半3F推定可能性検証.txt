@@ -1,0 +1,385 @@
+# タスク：地方競馬データの前半3F推定可能性検証
+
+## 🎯 目的
+nvd_seテーブル（地方競馬DATA）から「前半3Fタイム」を推定する手法の妥当性を、実データで検証する。
+
+---
+
+## 📋 前提条件
+
+### 使用環境
+- **データベース**: PostgreSQL
+- **接続情報**: pckeiba データベース
+- **対象テーブル**: nvd_se（馬毎レース情報）
+- **言語**: Python 3.9+, SQL
+
+### 既知の制約
+1. nvd_seには「上がり3F（後半3ハロン）」は存在するが、「前半3F」フィールドは存在しない
+2. 地方競馬DATAでは前半3Fは公式提供されていない
+3. JRA交流重賞では実測値がある可能性がある
+
+---
+
+## 🔍 検証ステップ
+
+### Step 1: データ構造の完全把握
+
+#### タスク 1-1: nvd_seテーブルの全フィールド確認
+
+```sql
+-- 実行SQL
+SELECT 
+    column_name, 
+    data_type, 
+    character_maximum_length,
+    is_nullable
+FROM information_schema.columns
+WHERE table_name = 'nvd_se'
+ORDER BY ordinal_position;
+出力形式: CSV または Markdown テーブル
+
+確認ポイント:
+
+ atogari_time (上がり3F) フィールドの存在確認
+ time (走破タイム) フィールドの存在確認
+ maehalf, zen3f, first_3f 等の前半3F関連フィールドの有無
+ corner1_jun ~ corner4_jun (コーナー通過順位) の存在確認
+ kyori (距離), baba_jotai (馬場状態) の存在確認
+タスク 1-2: データ型と格納形式の確認
+Copy-- サンプルデータ取得（直近10件）
+SELECT 
+    kaisai_yen,
+    kaisai_tsukihi,
+    keibajo_code,
+    race_bango,
+    umaban,
+    kyori,
+    time,
+    atogari_time,
+    baba_jotai,
+    corner1_jun,
+    corner4_jun,
+    kakuteijuni
+FROM nvd_se
+WHERE kaisai_yen = '2025'
+  AND kaisai_tsukihi >= '0105'
+ORDER BY kaisai_yen DESC, kaisai_tsukihi DESC, keibajo_code, race_bango, umaban
+LIMIT 10;
+確認ポイント:
+
+ time の単位（秒？ 0.1秒単位？ ミリ秒？）
+ atogari_time の単位
+ NULL値の扱い（'0000' なのか NULL なのか）
+ データ型（CHAR, INTEGER, NUMERIC 等）
+Step 2: データ品質評価
+タスク 2-1: 上がり3Fデータの充足率
+Copy-- 競馬場別・年別の上がり3F充足率
+SELECT 
+    keibajo_code,
+    kaisai_yen,
+    COUNT(*) as total_rows,
+    COUNT(*) FILTER (WHERE atogari_time IS NOT NULL AND atogari_time != '0000') as has_agari3f,
+    ROUND(
+        COUNT(*) FILTER (WHERE atogari_time IS NOT NULL AND atogari_time != '0000') * 100.0 / COUNT(*),
+        2
+    ) as fill_rate_percent
+FROM nvd_se
+WHERE kaisai_yen >= '2024'
+GROUP BY keibajo_code, kaisai_yen
+ORDER BY keibajo_code, kaisai_yen;
+判定基準:
+
+fill_rate < 50%: データ不足、推定困難
+fill_rate >= 80%: 推定可能
+競馬場ごとの差異に注意
+タスク 2-2: 上がり3Fの統計的妥当性チェック
+Copy-- 上がり3Fの分布確認（異常値検出）
+SELECT 
+    keibajo_code,
+    COUNT(*) as sample_count,
+    MIN(CAST(atogari_time AS NUMERIC) / 10.0) as min_agari3f_sec,
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY CAST(atogari_time AS NUMERIC)) / 10.0 as q1_agari3f_sec,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY CAST(atogari_time AS NUMERIC)) / 10.0 as median_agari3f_sec,
+    AVG(CAST(atogari_time AS NUMERIC) / 10.0) as avg_agari3f_sec,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY CAST(atogari_time AS NUMERIC)) / 10.0 as q3_agari3f_sec,
+    MAX(CAST(atogari_time AS NUMERIC) / 10.0) as max_agari3f_sec,
+    STDDEV(CAST(atogari_time AS NUMERIC) / 10.0) as stddev_agari3f_sec
+FROM nvd_se
+WHERE kaisai_yen >= '2024'
+  AND atogari_time IS NOT NULL
+  AND atogari_time != '0000'
+GROUP BY keibajo_code
+ORDER BY keibajo_code;
+判定基準:
+
+median 33-38秒: 正常範囲（ダート1600m-1800m想定）
+min < 25秒 or max > 50秒: 異常値の可能性
+stddev > 3秒: データのばらつき大
+Step 3: 実レースでの手計算検証
+タスク 3-1: 特定レースの全馬データ取得
+Copy-- 検証用：直近の南関東重賞レース1つ
+SELECT 
+    umaban,
+    ketto_toroku_bango,
+    CAST(time AS NUMERIC) / 10.0 as total_time_sec,
+    CAST(atogari_time AS NUMERIC) / 10.0 as agari3f_sec,
+    kyori as distance_m,
+    baba_jotai,
+    kakuteijuni as finish_position,
+    corner1_jun,
+    corner2_jun,
+    corner3_jun,
+    corner4_jun,
+    ninki as popularity
+FROM nvd_se
+WHERE kaisai_yen = '2025'
+  AND kaisai_tsukihi = '0101'  -- 元日レース
+  AND keibajo_code = '05'  -- 大井
+  AND race_bango = '11'  -- メインレース想定
+  AND atogari_time IS NOT NULL
+  AND atogari_time != '0000'
+ORDER BY kakuteijuni;
+手計算検証:
+
+1着馬のデータを使って以下を計算：
+
+前半〜中間区間タイム = 総走破タイム - 上がり3F
+前半600m区間の推定タイム = (前半〜中間区間タイム) / (距離 - 600m) × 600m
+妥当性チェック:
+
+前半600m推定タイムが 30-40秒の範囲内か？
+物理的に走行可能なペースか？（馬の生理学的限界）
+1着馬と最下位馬で大きな差があるか？
+タスク 3-2: 距離別の検証
+Copy-- 距離別の平均タイム分析
+SELECT 
+    kyori as distance_m,
+    COUNT(*) as race_count,
+    AVG(CAST(time AS NUMERIC) / 10.0) as avg_total_time_sec,
+    AVG(CAST(atogari_time AS NUMERIC) / 10.0) as avg_agari3f_sec,
+    AVG(CAST(time AS NUMERIC) - CAST(atogari_time AS NUMERIC)) / 10.0 as avg_remaining_time_sec
+FROM nvd_se
+WHERE kaisai_yen >= '2024'
+  AND keibajo_code = '05'  -- 大井競馬場
+  AND atogari_time IS NOT NULL
+  AND atogari_time != '0000'
+  AND kakuteijuni = 1  -- 1着馬のみ
+GROUP BY kyori
+HAVING COUNT(*) >= 10  -- 十分なサンプル数
+ORDER BY kyori;
+期待される結果:
+
+距離	平均総タイム	平均上がり3F	平均残り区間	前半600m推定
+1200m	72-75秒	36-38秒	36-37秒	36-37秒
+1400m	84-87秒	37-39秒	47-48秒	35-36秒
+1600m	96-100秒	37-39秒	59-61秒	35-37秒
+1800m	110-115秒	38-40秒	72-75秒	36-38秒
+2000m	125-130秒	38-40秒	87-90秒	37-39秒
+判定:
+
+前半600m推定タイムが 33-40秒の範囲なら妥当
+距離が長くなるほど前半が遅くなる傾向があるか確認
+Step 4: JRA交流重賞での答え合わせ
+タスク 4-1: JRA馬の実測値確認
+Copy-- JRA-VAN DataLabのjvd_seテーブルも確認可能か？
+-- （地方競馬DATAとJRA-VAN DataLabを両方契約している場合）
+
+SELECT EXISTS (
+    SELECT FROM information_schema.tables 
+    WHERE table_name = 'jvd_se'
+) as jvd_se_exists;
+もし jvd_se が存在する場合:
+
+Copy-- JRA交流重賞での前半3F実測値取得
+SELECT 
+    j.kaisai_yen,
+    j.kaisai_tsukihi,
+    j.keibajo_code,
+    j.race_bango,
+    j.umaban,
+    CAST(j.time AS NUMERIC) / 10.0 as total_time_sec,
+    CAST(j.atogari_time AS NUMERIC) / 10.0 as agari3f_sec,
+    -- JRAデータには前半3Fフィールドがある可能性
+    CAST(j.maehalf_time AS NUMERIC) / 10.0 as maehalf3f_actual_sec,
+    j.kyori
+FROM jvd_se j
+WHERE j.keibajo_code IN ('05','06','07','08')  -- 南関東
+  AND j.kaisai_yen >= '2024'
+  AND j.maehalf_time IS NOT NULL
+  AND j.maehalf_time != '0000'
+LIMIT 20;
+このデータがあれば:
+
+推定式の精度を実測値と比較可能
+誤差の分布を確認可能
+推定式のパラメータ調整が可能
+Step 5: 推定ロジックの試算
+タスク 5-1: シンプルな推定式の実装
+Copyimport pandas as pd
+from sqlalchemy import create_engine
+
+# データベース接続
+conn = create_engine('postgresql://user:password@localhost:5432/pckeiba')
+
+# テストデータ取得
+query = """
+SELECT 
+    kaisai_yen,
+    kaisai_tsukihi,
+    keibajo_code,
+    race_bango,
+    umaban,
+    CAST(kyori AS INTEGER) as distance_m,
+    CAST(time AS NUMERIC) / 10.0 as total_time_sec,
+    CAST(atogari_time AS NUMERIC) / 10.0 as agari3f_sec,
+    baba_jotai,
+    corner1_jun,
+    corner4_jun,
+    kakuteijuni
+FROM nvd_se
+WHERE kaisai_yen = '2025'
+  AND kaisai_tsukihi >= '0101'
+  AND keibajo_code = '05'
+  AND atogari_time IS NOT NULL
+  AND atogari_time != '0000'
+ORDER BY kaisai_yen, kaisai_tsukihi, race_bango, umaban
+LIMIT 100
+"""
+
+df = pd.read_sql(query, conn)
+
+# 推定ロジック：シンプル版
+def estimate_maehalf_simple(row):
+    """
+    最もシンプルな推定式
+    """
+    distance = row['distance_m']
+    total_time = row['total_time_sec']
+    agari3f = row['agari3f_sec']
+    
+    # 残り区間タイム
+    remaining_time = total_time - agari3f
+    remaining_distance = distance - 600
+    
+    if remaining_distance <= 0:
+        return None
+    
+    # 前半600m推定（残り区間の平均ペースで計算）
+    estimated_maehalf = (remaining_time / remaining_distance) * 600
+    
+    return round(estimated_maehalf, 1)
+
+df['estimated_maehalf_3f'] = df.apply(estimate_maehalf_simple, axis=1)
+
+# 結果確認
+print("=== 推定結果サンプル ===")
+print(df[['umaban', 'distance_m', 'total_time_sec', 'agari3f_sec', 'estimated_maehalf_3f']].head(20))
+
+# 統計サマリー
+print("\n=== 推定値の統計 ===")
+print(f"サンプル数: {df['estimated_maehalf_3f'].notna().sum()}")
+print(f"平均: {df['estimated_maehalf_3f'].mean():.1f}秒")
+print(f"中央値: {df['estimated_maehalf_3f'].median():.1f}秒")
+print(f"最小値: {df['estimated_maehalf_3f'].min():.1f}秒")
+print(f"最大値: {df['estimated_maehalf_3f'].max():.1f}秒")
+print(f"標準偏差: {df['estimated_maehalf_3f'].std():.1f}秒")
+判定基準:
+
+平均が 34-38秒の範囲: 妥当
+最小値 < 28秒 or 最大値 > 45秒: 推定式に問題あり
+標準偏差 > 4秒: ばらつきが大きすぎる
+タスク 5-2: 異常値の目視確認
+Copy# 異常値（推定が極端なケース）を抽出
+outliers = df[
+    (df['estimated_maehalf_3f'] < 30) | 
+    (df['estimated_maehalf_3f'] > 42)
+]
+
+print("\n=== 異常値ケース ===")
+print(outliers[['kaisai_tsukihi', 'race_bango', 'umaban', 'distance_m', 
+                'total_time_sec', 'agari3f_sec', 'estimated_maehalf_3f', 
+                'kakuteijuni', 'corner1_jun', 'corner4_jun']])
+
+# 異常値の共通パターン分析
+print("\n=== 異常値の特徴 ===")
+print(f"異常値の割合: {len(outliers) / len(df) * 100:.1f}%")
+print(f"異常値の平均着順: {outliers['kakuteijuni'].mean():.1f}着")
+print(f"異常値の1コーナー順位: {outliers['corner1_jun'].mean():.1f}番手")
+確認ポイント:
+
+異常値が多い（>10%）なら推定式の見直し必要
+異常値に共通パターンがあるか？（大敗馬、出遅れ馬等）
+Step 6: 報告書作成
+必須の報告内容
+1. データ構造の確認結果
+
+nvd_seに前半3F関連フィールドは存在するか？
+上がり3Fデータの充足率は？
+2. データ品質評価
+
+上がり3Fの統計は妥当な範囲か？
+異常値・欠損値の状況は？
+3. 手計算検証結果
+
+1レースの詳細検証で、推定値は物理的に妥当か？
+距離別の傾向は理論と一致するか？
+4. 推定精度の評価
+
+シンプル推定式の結果は妥当か？
+異常値の割合と原因は？
+5. 最終判断
+
+ 推定可能: 精度XX%で実装推奨
+ 要改善: 手法の修正が必要（具体的な改善案）
+ 推定困難: データ不足または理論的欠陥
+6. 次のアクション提案
+
+実装する場合：推奨する推定式とパラメータ
+保留する場合：追加で必要なデータ・検証内容
+📤 成果物
+必須ファイル
+validation_report.md: 上記の報告書（Markdown形式）
+validation_queries.sql: 実行した全SQLクエリ
+validation_analysis.py: Python検証スクリプト
+sample_results.csv: 推定結果サンプル（100件程度）
+オプション
+visualization.png: 推定値の分布グラフ
+comparison_table.xlsx: 距離別・競馬場別の統計比較表
+⚠️ 注意事項
+データベース負荷に注意
+
+大量データ取得時は LIMIT 句を使用
+インデックスが効くクエリを心がける
+データ型の確認を徹底
+
+CAST や型変換のエラーに注意
+NULL値と'0000'の扱いを統一
+異常値の扱い
+
+明らかな入力ミス（タイム0秒等）は除外
+しかし「不利があった馬」も異常値に見えるため慎重に判断
+セキュリティ
+
+データベース接続情報は環境変数で管理
+実データを外部に公開しない
+🎯 成功基準
+最低達成ライン
+ nvd_seの全フィールドリスト取得完了
+ 上がり3Fの充足率が80%以上確認
+ 1レース以上の手計算検証完了
+ 推定式の異常値が10%以下
+理想達成ライン
+ JRA交流重賞で実測値との比較完了
+ 推定誤差が平均1.0秒以内
+ 距離別・馬場別の最適パラメータ導出
+ PostgreSQL実装用のテーブル設計完成
+📞 質問・相談事項
+検証中に以下の状況が発生したら即報告：
+
+nvd_seテーブルが存在しない
+atogari_timeフィールドが存在しない
+データ充足率が50%未満
+推定値が全て異常値（物理的にありえない値）
+SQLエラーが解決できない
+以上、よろしくお願いします。
+

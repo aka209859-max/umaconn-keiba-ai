@@ -1,0 +1,245 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+NAR AI予想システム - メインスクリプト
+実行方法: python main.py [--date YYYYMMDD]
+例: python main.py
+例: python main.py --date 20260105
+"""
+
+import sys
+import argparse
+from datetime import datetime, timedelta
+
+sys.path.append('E:/UmaData/nar-analytics-python')
+
+from config.db_config import get_db_connection
+from core.data_fetcher import (
+    get_tomorrow_races,
+    get_races_by_date,
+    get_race_info,
+    get_venue_summary
+)
+from core.aas_calculator import calculate_race_aas_scores
+from core.prediction_generator import save_all_predictions
+from discord_notifier import send_race_to_discord, send_summary_to_discord
+
+KEIBAJO_NAMES = {
+    '30': '門別',
+    '35': '盛岡',
+    '36': '水沢',
+    '42': '浦和',
+    '43': '船橋',
+    '44': '大井',
+    '45': '川崎',
+    '46': '金沢',
+    '47': '笠松',
+    '48': '名古屋',
+    '50': '園田',
+    '51': '姫路',
+    '54': '高知',
+    '55': '佐賀',
+    '83': 'ばんえい',
+}
+
+DISCORD_WEBHOOK_URL = "https://discordapp.com/api/webhooks/1457672476342616116/b89gldDK15mvmp0wguHvcshM5C4tj7C9mppSJ5zbNCDf8uG6VBSrSuiH6s2ZRsfWrVOd"
+USE_DISCORD = True
+
+
+def get_tomorrow_date():
+    """明日の日付を取得（YYYYMMDD形式）"""
+    tomorrow = datetime.now() + timedelta(days=1)
+    return tomorrow.strftime('%Y%m%d')
+
+
+def main():
+    """メイン処理"""
+    
+    parser = argparse.ArgumentParser(description='NAR AI予想システム')
+    parser.add_argument('--date', type=str, help='対象日付（YYYYMMDD形式）')
+    args = parser.parse_args()
+    
+    if args.date:
+        target_date = args.date
+    else:
+        target_date = get_tomorrow_date()
+    
+    print("=" * 80)
+    print("NAR AI予想システム")
+    print(f"対象日付: {target_date}")
+    print("=" * 80)
+    
+    try:
+        print("\n📊 データベースに接続中...")
+        conn = get_db_connection()
+        
+        print("\n【ステップ0】開催競馬場の確認")
+        cur = conn.cursor()
+        
+        query = """
+        SELECT 
+            keibajo_code,
+            COUNT(DISTINCT race_bango) as race_count,
+            COUNT(*) as horse_count
+        FROM nvd_se
+        WHERE kaisai_nen || kaisai_tsukihi = %s
+        GROUP BY keibajo_code
+        ORDER BY keibajo_code
+        """
+        
+        cur.execute(query, (target_date,))
+        venue_stats = cur.fetchall()
+        
+        if not venue_stats:
+            print(f"❌ {target_date}のデータが見つかりません")
+            cur.close()
+            conn.close()
+            return
+        
+        print(f"{'競馬場':<12} {'レース数':>8} {'出走頭数':>8}")
+        print("-" * 40)
+        
+        total_races = 0
+        total_horses = 0
+        
+        for row in venue_stats:
+            code = row['keibajo_code']
+            name = KEIBAJO_NAMES.get(code, f'不明{code}')
+            race_count = row['race_count']
+            horse_count = row['horse_count']
+            
+            print(f"{name:<12} {race_count:>8} {horse_count:>8}")
+            total_races += race_count
+            total_horses += horse_count
+        
+        print("-" * 40)
+        print(f"{'合計':<12} {total_races:>8} {total_horses:>8}")
+        
+        cur.close()
+        
+        if USE_DISCORD and DISCORD_WEBHOOK_URL:
+            venue_list = [
+                {
+                    'name': KEIBAJO_NAMES.get(row['keibajo_code'], f"不明{row['keibajo_code']}"),
+                    'races': row['race_count'],
+                    'horses': row['horse_count']
+                }
+                for row in venue_stats
+            ]
+            send_summary_to_discord(DISCORD_WEBHOOK_URL, target_date, total_races, total_horses, venue_list)
+        
+        print("\n【ステップ1】対象レース一覧取得")
+        races = get_races_by_date(conn, target_date)
+        print(f"✅ 対象レース数: {len(races)}レース")
+        
+        if not races:
+            print(f"❌ {target_date}のレースデータが見つかりません")
+            conn.close()
+            return
+        
+        print("\n【ステップ2】出走馬データ取得")
+        horses = get_tomorrow_races(conn, target_date)
+        print(f"✅ 出走馬数: {len(horses)}頭")
+        
+        print("\n【ステップ3】前走データ取得・統合")
+        # get_tomorrow_races() が既に前走データ込みで返すため、追加処理は不要
+        with_prev = sum(1 for h in horses if h.get('prev_chakujun'))
+        without_prev = len(horses) - with_prev
+        print(f"  前走データあり: {with_prev}頭")
+        print(f"  前走データなし: {without_prev}頭")
+        print("✅ データ統合完了")
+        
+        print("\n【ステップ4】レース情報取得")
+        race_infos = {}
+        
+        for race in races:
+            keibajo_code = race['keibajo_code']
+            kaisai_date = race['kaisai_date']
+            race_bango = race['race_bango']
+            
+            race_info = get_race_info(conn, keibajo_code, kaisai_date, race_bango)
+            
+            if race_info:
+                race_key = f"{keibajo_code}_{race_bango}"
+                race_info['keibajo_code'] = keibajo_code
+                race_infos[race_key] = race_info
+        
+        print(f"✅ レース情報取得完了: {len(race_infos)}レース")
+        
+        print("\n【ステップ5】HQS得点計算")
+        
+        all_predictions = {}
+        
+        for race in races:
+            keibajo_code = race['keibajo_code']
+            race_bango = race['race_bango']
+            race_key = f"{keibajo_code}_{race_bango}"
+            
+            race_horses = [
+                h for h in horses
+                if h['keibajo_code'] == keibajo_code and h['race_bango'] == race_bango
+            ]
+            
+            if not race_horses:
+                continue
+            
+            race_info = race_infos.get(race_key)
+            if not race_info:
+                continue
+            
+            try:
+                predictions = calculate_race_aas_scores(conn, race_horses, race_info)
+                
+                if predictions:
+                    all_predictions[race_key] = predictions
+                    
+                    keibajo_name = KEIBAJO_NAMES.get(keibajo_code, f'競馬場{keibajo_code}')
+                    race_bango_int = int(race_bango)
+                    
+                    print(f"\n【{keibajo_name} {race_bango_int:02d}R】")
+                    print("-" * 60)
+                    print(f"{'順位':>4} {'馬番':>4} {'馬名':<20} {'HQS得点':>8} {'偏差値':>6}")
+                    print("-" * 60)
+                    
+                    for rank, horse in enumerate(predictions[:11], 1):
+                        umaban = int(horse['umaban'])
+                        bamei = horse['bamei']
+                        hqs = horse['total_aas']
+                        hensachi = horse.get('hensachi', 50.0)
+                        
+                        print(f"{rank:>4} {umaban:>4}番 {bamei:<20} {hqs:>7.1f}点 {hensachi:>5.1f}")
+                    
+                    if USE_DISCORD and DISCORD_WEBHOOK_URL:
+                        send_race_to_discord(DISCORD_WEBHOOK_URL, keibajo_name, race_bango_int, predictions)
+                
+            except Exception as e:
+                print(f"❌ {keibajo_code} {race_bango}R のHQS計算エラー: {e}")
+                import traceback
+                traceback.print_exc()
+                continue
+        
+        print(f"\n✅ HQS得点計算完了")
+        
+        print("\n【ステップ6】予想ファイル生成")
+        
+        base_output_dir = "E:/UmaData/nar-analytics-python/output"
+        
+        saved_files = save_all_predictions(all_predictions, race_infos, target_date, base_output_dir)
+        
+        print(f"\n✅ 予想生成完了")
+        print(f"  基本予想: {len(saved_files['basic'])}ファイル")
+        print(f"  note用: {len(saved_files['note'])}ファイル")
+        print(f"  プレミアム: {len(saved_files['premium'])}ファイル")
+        print(f"\n📁 出力先: {base_output_dir}/{target_date}/")
+        
+        conn.close()
+        print("\n✅ データベース接続を終了しました")
+        
+    except Exception as e:
+        print(f"\n❌ エラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == '__main__':
+    main()
