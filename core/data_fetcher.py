@@ -84,6 +84,7 @@ def get_previous_race_by_id(conn, ketto_toroku_bango, keibajo_code, current_date
         corner_2 as prev_corner_2,
         corner_3 as prev_corner_3,
         corner_4 as prev_corner_4,
+        soha_time as prev_soha_time,
         time_sa as prev_time_sa,
         kohan_3f as prev_kohan_3f,
         wakuban as prev_wakuban,
@@ -217,6 +218,7 @@ def enrich_horse_data_with_prev_race(conn, horses_data, current_date):
             horse['prev_corner_2'] = None
             horse['prev_corner_3'] = None
             horse['prev_corner_4'] = None
+            horse['prev_soha_time'] = None
             horse['prev_time_sa'] = None
             horse['prev_kohan_3f'] = None
             horse['prev_wakuban'] = None
