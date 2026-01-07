@@ -78,6 +78,61 @@ def get_baba_correction_value(baba_code: str) -> float:
 
 
 # ============================
+# 不利補正マッピング
+# ============================
+
+FURI_CORRECTION = {
+    # 不利コード: (補正値_秒, 説明)
+    '01': (0.5, '出遅れ'),
+    '02': (0.8, '大きく出遅れ'),
+    '03': (0.3, 'やや出遅れ'),
+    '04': (1.0, '挟まれる'),
+    '05': (0.8, '進路がなくなる'),
+    '06': (0.6, 'ダッシュつかず'),
+    '07': (1.2, '砂をかぶる'),
+    '08': (0.7, '内をつかれて外に出される'),
+    '09': (0.9, '押し出される'),
+    '10': (1.5, '大外を回される'),
+    '11': (1.0, '外を回される'),
+    '12': (0.8, 'ゴチャつく'),
+    '13': (1.8, '落馬'),
+    '14': (2.0, '故障'),
+    '15': (0.5, '躓く'),
+    '16': (0.6, 'よれる'),
+    '17': (0.4, '掛かる'),
+    '18': (0.7, 'ささる'),
+    '19': (1.0, '前が詰まる'),
+    '20': (0.8, '接触'),
+    '21': (0.5, 'バテる'),
+    '22': (1.2, '不利大'),
+    '23': (0.6, '不利'),
+    '24': (0.3, 'やや不利'),
+    '25': (0.9, '直線で不利'),
+    '26': (1.1, '4角で不利'),
+    '27': (0.8, '3角で不利'),
+    '28': (0.7, '向正面で不利'),
+    '29': (0.6, 'スタートで不利'),
+    '30': (1.3, '追突'),
+}
+
+
+def get_furi_correction(furi_code: str) -> Tuple[float, str]:
+    """
+    不利補正値を取得
+    
+    Args:
+        furi_code: 不利コード（2桁数字の文字列）
+    
+    Returns:
+        (補正値_秒, 説明)
+    """
+    if not furi_code or furi_code == '00' or furi_code == '':
+        return (0.0, 'なし')
+    
+    return FURI_CORRECTION.get(furi_code, (0.0, '不明'))
+
+
+# ============================
 # 3. テン指数計算
 # ============================
 
@@ -85,18 +140,20 @@ def calculate_ten_index(
     zenhan_3f: float,
     kyori: int,
     baba_code: str,
-    keibajo_code: str
+    keibajo_code: str,
+    furi_code: str = '00'
 ) -> float:
     """
     テン指数を計算
     
-    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正) × 10
+    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正) × 10
     
     Args:
         zenhan_3f: 前半3Fタイム（秒）
         kyori: 距離（m）
         baba_code: 馬場状態コード
         keibajo_code: 競馬場コード
+        furi_code: 不利コード（デフォルト: '00'=なし）
     
     Returns:
         テン指数（-100 〜 +100）
@@ -107,13 +164,20 @@ def calculate_ten_index(
     # 馬場差補正
     baba_correction = get_baba_correction_value(baba_code)
     
+    # 不利補正（スタート不利・前半不利のみ適用）
+    furi_correction, furi_desc = get_furi_correction(furi_code)
+    # スタート不利（01-03, 06, 29）と向正面不利（28）のみテン指数に適用
+    ten_furi_codes = ['01', '02', '03', '06', '28', '29']
+    if furi_code not in ten_furi_codes:
+        furi_correction = 0.0
+    
     # テン指数計算
-    ten_index = ((base_time - zenhan_3f) + baba_correction) * 10
+    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction) * 10
     
     # 範囲制限
     ten_index = max(-100, min(100, ten_index))
     
-    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s)")
+    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}])")
     
     return round(ten_index, 1)
 
@@ -170,18 +234,20 @@ def calculate_agari_index(
     kohan_3f: float,
     kyori: int,
     baba_code: str,
-    keibajo_code: str
+    keibajo_code: str,
+    furi_code: str = '00'
 ) -> float:
     """
     上がり指数を計算
     
-    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正) × 10
+    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正) × 10
     
     Args:
         kohan_3f: 後半3Fタイム（秒）
         kyori: 距離（m）
         baba_code: 馬場状態コード
         keibajo_code: 競馬場コード
+        furi_code: 不利コード（デフォルト: '00'=なし）
     
     Returns:
         上がり指数（-100 〜 +100）
@@ -192,13 +258,20 @@ def calculate_agari_index(
     # 馬場差補正
     baba_correction = get_baba_correction_value(baba_code)
     
+    # 不利補正（直線・4角不利のみ適用）
+    furi_correction, furi_desc = get_furi_correction(furi_code)
+    # 直線不利（25）、4角不利（26）、3角不利（27）、その他ゴール前不利を適用
+    agari_furi_codes = ['04', '05', '08', '09', '10', '11', '12', '19', '22', '23', '24', '25', '26', '27', '30']
+    if furi_code not in agari_furi_codes:
+        furi_correction = 0.0
+    
     # 上がり指数計算
-    agari_index = ((base_time - kohan_3f) + baba_correction) * 10
+    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction) * 10
     
     # 範囲制限
     agari_index = max(-100, min(100, agari_index))
     
-    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s)")
+    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}])")
     
     return round(agari_index, 1)
 
@@ -335,11 +408,12 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         baba_code = str(horse_data.get('babajotai_code_dirt', '1'))
         keibajo_code = str(horse_data.get('keibajo_code', '42'))
         tosu = safe_int(horse_data.get('tosu'), 12)
+        furi_code = str(horse_data.get('furi_code', '00'))
         
         # 各指数を計算
-        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code)
+        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code)
         position_index = calculate_position_index(corner_1, corner_2, corner_3, corner_4, tosu)
-        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code)
+        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code)
         pace_index = calculate_pace_index(ten_index, agari_index, zenhan_3f, kohan_3f)
         
         # 予想脚質（過去データがある場合）
@@ -385,6 +459,7 @@ if __name__ == "__main__":
         'babajotai_code_dirt': '1',
         'keibajo_code': '42',
         'tosu': 12,
+        'furi_code': '00',  # 不利なし
         'past_corners': [
             (2, 2, 3, 2),
             (1, 1, 2, 1),
@@ -392,12 +467,42 @@ if __name__ == "__main__":
         ]
     }
     
-    # 指数計算
+    # 不利ありのテストデータ
+    test_horse_furi = {
+        'zenhan_3f': 36.5,
+        'kohan_3f': 39.5,
+        'corner_1': 8,
+        'corner_2': 7,
+        'corner_3': 6,
+        'corner_4': 5,
+        'kyori': 1600,
+        'babajotai_code_dirt': '2',
+        'keibajo_code': '42',
+        'tosu': 12,
+        'furi_code': '10',  # 大外を回される
+        'past_corners': [
+            (8, 7, 6, 5),
+            (9, 8, 7, 6),
+            (7, 6, 5, 4)
+        ]
+    }
+    
+    # 指数計算（不利なし）
     indexes = calculate_all_indexes(test_horse)
     
-    print("\n=== HQS指数計算結果 ===")
+    print("\n=== HQS指数計算結果（不利なし）===")
     print(f"テン指数:   {indexes['ten_index']:.1f}")
     print(f"位置指数:   {indexes['position_index']:.1f}")
     print(f"上がり指数: {indexes['agari_index']:.1f}")
     print(f"ペース指数: {indexes['pace_index']:.1f}")
     print(f"予想脚質:   {indexes['ashishitsu']}")
+    
+    # 指数計算（不利あり）
+    indexes_furi = calculate_all_indexes(test_horse_furi)
+    
+    print("\n=== HQS指数計算結果（大外を回される）===")
+    print(f"テン指数:   {indexes_furi['ten_index']:.1f}")
+    print(f"位置指数:   {indexes_furi['position_index']:.1f}")
+    print(f"上がり指数: {indexes_furi['agari_index']:.1f}")
+    print(f"ペース指数: {indexes_furi['pace_index']:.1f}")
+    print(f"予想脚質:   {indexes_furi['ashishitsu']}")
