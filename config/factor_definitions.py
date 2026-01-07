@@ -115,6 +115,131 @@ SINGLE_FACTORS = [
         'table': 'nvd_se',
         'column': 'seibetsu_code',
         'display_column': 'seibetsu_code'
+    },
+    # Phase 1 高優先度ファクター（2026-01-06 追加）
+    {
+        'id': 'F17',
+        'name': '馬齢',
+        'table': 'nvd_se',
+        'column': 'barei',
+        'display_column': 'barei'
+    },
+    {
+        'id': 'F22',
+        'name': '前走タイム差',
+        'table': 'nvd_se',
+        'column': 'prev_time_sa',  # 前走データから取得
+        'display_column': 'prev_time_sa'
+    },
+    {
+        'id': 'F23',
+        'name': '前走上がり3F',
+        'table': 'nvd_se',
+        'column': 'prev_kohan_3f',  # 前走データから取得
+        'display_column': 'prev_kohan_3f'
+    },
+    {
+        'id': 'F28',
+        'name': '出走頭数',
+        'table': 'nvd_ra',
+        'column': 'tosu',
+        'display_column': 'tosu'
+    },
+    # Phase 2 中優先度ファクター（2026-01-07 追加）
+    {
+        'id': 'F25',
+        'name': '単勝オッズ',
+        'table': 'nvd_se',
+        'column': 'tansho_odds',
+        'display_column': 'tansho_odds'
+    },
+    {
+        'id': 'F26',
+        'name': '単勝人気順',
+        'table': 'nvd_se',
+        'column': 'tansho_ninkijun',
+        'display_column': 'tansho_ninkijun'
+    },
+    {
+        'id': 'F27',
+        'name': 'トラックコード',
+        'table': 'nvd_ra',
+        'column': 'track_code',
+        'display_column': 'track_code'
+    },
+    {
+        'id': 'F29',
+        'name': 'グレードコード',
+        'table': 'nvd_ra',
+        'column': 'grade_code',
+        'display_column': 'grade_code'
+    },
+    # Phase 3 血統ファクター（2026-01-07 追加・修正）
+    # 重要: 血統データは nvd_um（競走馬マスタ）テーブルに存在
+    # nvd_se には存在しない！
+    # 取得には ketto_toroku_bango をキーに nvd_um と LEFT JOIN が必須
+    {
+        'id': 'B15',
+        'name': '父ID',
+        'table': 'nvd_um',
+        'column': 'fufu_ketto_toroku_bango',  # 正式列名（デープサーチ確認済み）
+        'display_column': 'fufu_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango'  # nvd_se との結合キー
+    },
+    {
+        'id': 'B16',
+        'name': '母ID',
+        'table': 'nvd_um',
+        'column': 'bobo_ketto_toroku_bango',  # 正式列名
+        'display_column': 'bobo_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango'
+    },
+    {
+        'id': 'B17',
+        'name': '父父ID',
+        'table': 'nvd_um',
+        'column': 'fufu_ketto_toroku_bango',  # 父の父（再帰JOIN）
+        'display_column': 'fufu_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango',
+        'recursive': True,  # 2段階JOIN必要
+        'parent_table': 'sire'  # 父テーブルからさらにJOIN
+    },
+    {
+        'id': 'B18',
+        'name': '父母ID',
+        'table': 'nvd_um',
+        'column': 'bobo_ketto_toroku_bango',  # 父の母（再帰JOIN）
+        'display_column': 'bobo_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango',
+        'recursive': True,
+        'parent_table': 'sire'
+    },
+    {
+        'id': 'B19',
+        'name': '母父ID（BMS）',
+        'table': 'nvd_um',
+        'column': 'hahachichi_ketto_toroku_bango',  # 正式列名（母の父）
+        'display_column': 'hahachichi_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango',
+        'note': 'BMS（Broodmare Sire）: 地方競馬で重要'
+    },
+    {
+        'id': 'B20',
+        'name': '母母ID',
+        'table': 'nvd_um',
+        'column': 'bobo_ketto_toroku_bango',  # 母の母（再帰JOIN）
+        'display_column': 'bobo_ketto_toroku_bango',
+        'join_key': 'ketto_toroku_bango',
+        'recursive': True,
+        'parent_table': 'dam'  # 母テーブルからさらにJOIN
+    },
+    # Phase 3 その他ファクター（2026-01-07 追加）
+    {
+        'id': 'F24',
+        'name': '前走枠番',
+        'table': 'nvd_se',
+        'column': 'prev_wakuban',  # 前走データから取得
+        'display_column': 'prev_wakuban'
     }
 ]
 

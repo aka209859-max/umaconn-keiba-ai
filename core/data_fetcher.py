@@ -232,6 +232,140 @@ def enrich_horse_data_with_prev_race(conn, horses_data, current_date):
     return enriched_data
 
 
+def get_bloodline_data(conn, ketto_toroku_bango):
+    """
+    血統データを取得（nvd_um テーブルから）
+    
+    Args:
+        conn: データベース接続
+        ketto_toroku_bango: 血統登録番号（馬ID）
+    
+    Returns:
+        dict: 血統データ {
+            'fufu_ketto_toroku_bango': 父ID (B15),
+            'bobo_ketto_toroku_bango': 母ID (B16),
+            'hahachichi_ketto_toroku_bango': 母父ID (B19)
+        }
+    """
+    query = """
+    SELECT 
+        fufu_ketto_toroku_bango,
+        bobo_ketto_toroku_bango,
+        hahachichi_ketto_toroku_bango
+    FROM nvd_um
+    WHERE ketto_toroku_bango = %s
+    """
+    
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(query, (ketto_toroku_bango,))
+        result = cur.fetchone()
+    
+    return result if result else {
+        'fufu_ketto_toroku_bango': None,
+        'bobo_ketto_toroku_bango': None,
+        'hahachichi_ketto_toroku_bango': None
+    }
+
+
+def get_three_generation_bloodline(conn, ketto_toroku_bango):
+    """
+    3代血統データを取得（再帰的JOIN）
+    
+    Args:
+        conn: データベース接続
+        ketto_toroku_bango: 血統登録番号（馬ID）
+    
+    Returns:
+        dict: 3代血統データ {
+            'f_blood_no': 父ID (B15),
+            'm_blood_no': 母ID (B16),
+            'ff_blood_no': 父父ID (B17),
+            'fm_blood_no': 父母ID (B18),
+            'mf_blood_no': 母父ID (B19),
+            'mm_blood_no': 母母ID (B20)
+        }
+    """
+    query = """
+    SELECT 
+        um.fufu_ketto_toroku_bango as f_blood_no,
+        um.bobo_ketto_toroku_bango as m_blood_no,
+        sire.fufu_ketto_toroku_bango as ff_blood_no,
+        sire.bobo_ketto_toroku_bango as fm_blood_no,
+        um.hahachichi_ketto_toroku_bango as mf_blood_no,
+        dam.bobo_ketto_toroku_bango as mm_blood_no
+    FROM nvd_um um
+    LEFT JOIN nvd_um sire ON um.fufu_ketto_toroku_bango = sire.ketto_toroku_bango
+    LEFT JOIN nvd_um dam ON um.bobo_ketto_toroku_bango = dam.ketto_toroku_bango
+    WHERE um.ketto_toroku_bango = %s
+    """
+    
+    with conn.cursor(cursor_factory=RealDictCursor) as cur:
+        cur.execute(query, (ketto_toroku_bango,))
+        result = cur.fetchone()
+    
+    return result if result else {
+        'f_blood_no': None,
+        'm_blood_no': None,
+        'ff_blood_no': None,
+        'fm_blood_no': None,
+        'mf_blood_no': None,
+        'mm_blood_no': None
+    }
+
+
+def enrich_horse_data_with_bloodline(conn, horses_data):
+    """
+    出走馬データに血統データを追加
+    
+    Args:
+        conn: データベース接続
+        horses_data: 出走馬データのリスト
+    
+    Returns:
+        list: 血統データを追加した出走馬データ
+    """
+    enriched_data = []
+    bloodline_found = 0
+    bloodline_not_found = 0
+    
+    for horse in horses_data:
+        ketto_toroku_bango = horse.get('ketto_toroku_bango')
+        
+        if ketto_toroku_bango:
+            # 3代血統データを取得
+            bloodline = get_three_generation_bloodline(conn, ketto_toroku_bango)
+            
+            if bloodline and bloodline['f_blood_no']:
+                horse.update(bloodline)
+                enriched_data.append(horse)
+                bloodline_found += 1
+            else:
+                # 血統データがない場合は None で埋める
+                horse['f_blood_no'] = None
+                horse['m_blood_no'] = None
+                horse['ff_blood_no'] = None
+                horse['fm_blood_no'] = None
+                horse['mf_blood_no'] = None
+                horse['mm_blood_no'] = None
+                enriched_data.append(horse)
+                bloodline_not_found += 1
+        else:
+            # ketto_toroku_bango がない場合
+            horse['f_blood_no'] = None
+            horse['m_blood_no'] = None
+            horse['ff_blood_no'] = None
+            horse['fm_blood_no'] = None
+            horse['mf_blood_no'] = None
+            horse['mm_blood_no'] = None
+            enriched_data.append(horse)
+            bloodline_not_found += 1
+    
+    print(f"  血統データあり: {bloodline_found}頭")
+    print(f"  血統データなし: {bloodline_not_found}頭")
+    
+    return enriched_data
+
+
 # テスト用
 if __name__ == '__main__':
     import sys

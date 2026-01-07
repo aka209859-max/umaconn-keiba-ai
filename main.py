@@ -22,9 +22,10 @@ from core.data_fetcher import (
     get_tomorrow_races,
     get_races_by_date,
     get_race_info,
-    enrich_horse_data_with_prev_race
+    enrich_horse_data_with_prev_race,
+    enrich_horse_data_with_bloodline
 )
-from core.aas_calculator import calculate_race_aas_scores
+from core.hqs_calculator import calculate_race_hqs_scores
 from core.prediction_generator import save_all_predictions
 
 
@@ -73,6 +74,11 @@ def main():
         enriched_horses = enrich_horse_data_with_prev_race(conn, horses, target_date)
         print(f"✅ データ統合完了\n")
         
+        # ステップ3.5: 血統データ追加
+        print("【ステップ3.5】血統データ取得・統合")
+        enriched_horses = enrich_horse_data_with_bloodline(conn, enriched_horses)
+        print(f"✅ 血統データ統合完了\n")
+        
         # ステップ4: レース情報取得
         print("【ステップ4】レース情報取得")
         race_infos = {}
@@ -117,7 +123,7 @@ def main():
             
             # AAS得点計算
             try:
-                predictions = calculate_race_aas_scores(conn, race_horses, race_info)
+                predictions = calculate_race_hqs_scores(conn, race_horses, race_info)
                 
                 all_predictions[keibajo_code].append({
                     'race_bango': race_bango,

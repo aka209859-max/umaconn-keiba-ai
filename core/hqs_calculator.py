@@ -1,12 +1,17 @@
 """
-AAS得点計算モジュール
+HQS（旧AAS）得点計算モジュール
 
-AAS (Adaptive Ability Score) 計算:
+HQS (High Quality Score, 旧名称: Adaptive Ability Score) 計算:
 1. 各ファクターの補正回収率データ取得
 2. Hit_raw, Ret_raw 計算
 3. レース内でZスコア化
-4. AAS得点算出（-12 ~ +12）
+4. HQS得点算出（-12 ~ +12）
 5. 競馬場別重みを適用
+
+公式計算式（2026-01-07 確定版）:
+- 入力: adjWinRet, adjPlaceRet（補正後回収率）
+- 範囲: -12 ~ +12
+- 評価方式: 相対評価（グループ内比較）
 """
 
 import numpy as np
@@ -64,8 +69,8 @@ def get_factor_stats(conn, keibajo_code, factor_name, factor_value, kyori=None):
             'cntPlace': 複勝試行回数,
             'rateWinHit': 単勝的中率（0-100の%値）,
             'ratePlaceHit': 複勝的中率（0-100の%値）,
-            'rateWinRet': 補正単勝回収率（0-100の%値）,
-            'ratePlaceRet': 補正複勝回収率（0-100の%値）
+            'adjWinRet': 補正単勝回収率（0-100の%値）,
+            'adjPlaceRet': 補正複勝回収率（0-100の%値）
         }
     """
     from core.factor_stats_calculator import get_factor_stats_summary
@@ -80,14 +85,14 @@ def get_factor_stats(conn, keibajo_code, factor_name, factor_value, kyori=None):
             conn, keibajo_code, kyori, factor_name, str(factor_value)
         )
         
-        # AAS計算用の形式で返す（%値）
+        # HQS計算用の形式で返す（%値）
         return {
             'cntWin': stats['cnt_win'],
             'cntPlace': stats['cnt_place'],
             'rateWinHit': stats['rate_win_hit'],      # %値
             'ratePlaceHit': stats['rate_place_hit'],  # %値
-            'rateWinRet': stats['rate_win_ret'],      # %値（補正済み）
-            'ratePlaceRet': stats['rate_place_ret']   # %値（補正済み）
+            'adjWinRet': stats['rate_win_ret'],       # %値（補正済み）
+            'adjPlaceRet': stats['rate_place_ret']    # %値（補正済み）
         }
     except Exception as e:
         print(f"Warning: ファクター統計取得エラー: {factor_name}={factor_value}, Error: {e}")
@@ -97,8 +102,8 @@ def get_factor_stats(conn, keibajo_code, factor_name, factor_value, kyori=None):
             'cntPlace': 10,
             'rateWinHit': 10.0,
             'ratePlaceHit': 30.0,
-            'rateWinRet': 75.0,
-            'ratePlaceRet': 80.0
+            'adjWinRet': 75.0,
+            'adjPlaceRet': 80.0
         }
 
 
@@ -123,8 +128,9 @@ def calculate_hit_ret_raw(factor_stats):
                0.35 * factor_stats['ratePlaceHit'])
     
     # 回収率（%値そのまま使用: 85% = 85）
-    Ret_raw = (0.35 * factor_stats['rateWinRet'] + 
-               0.65 * factor_stats['ratePlaceRet'])
+    # 公式: Ret_raw = 0.35 × adjWinRet + 0.65 × adjPlaceRet
+    Ret_raw = (0.35 * factor_stats['adjWinRet'] + 
+               0.65 * factor_stats['adjPlaceRet'])
     
     return Hit_raw, Ret_raw, N_min
 
@@ -167,13 +173,13 @@ def calculate_z_scores(hit_raw_values, ret_raw_values):
     return ZH_list, ZR_list, mu_h, sigma_h, mu_r, sigma_r
 
 
-def calculate_aas_score_from_z(ZH, ZR, Shr):
+def calculate_hqs_score_from_z(ZH, ZR, Shr):
     """
-    ZスコアからAAS得点を計算
+    ZスコアからHQS（旧AAS）得点を計算
     
-    CEOの正しい計算式:
+    公式計算式（2026-01-07 確定版）:
     baseCalc = 0.55 × ZH + 0.45 × ZR
-    AAS = 12 × tanh(baseCalc) × Shr
+    HQS = 12 × tanh(baseCalc) × Shr
     
     最終結果は小数点第1位に四捨五入
     
@@ -183,12 +189,12 @@ def calculate_aas_score_from_z(ZH, ZR, Shr):
         Shr: Shrinkage係数
     
     Returns:
-        float: AAS得点（-12 ~ +12、小数点第1位）
+        float: HQS得点（-12 ~ +12、小数点第1位）
     """
     baseCalc = 0.55 * ZH + 0.45 * ZR
-    aas_score = 12 * np.tanh(baseCalc) * Shr
-    # CEO仕様: 小数点第2位を四捨五入
-    return round(aas_score, 1)
+    hqs_score = 12 * np.tanh(baseCalc) * Shr
+    # 公式仕様: 小数点第1位に四捨五入
+    return round(hqs_score, 1)
 
 
 def extract_single_factor_value(horse, factor_name):
@@ -313,9 +319,9 @@ def is_valid_factor_value(value):
     return True
 
 
-def calculate_race_aas_scores(conn, horses_data, race_info):
+def calculate_race_hqs_scores(conn, horses_data, race_info):
     """
-    レース内の全馬のAAS得点を計算
+    レース内の全馬のHQS（旧AAS）得点を計算
     
     Args:
         conn: データベース接続
@@ -323,7 +329,7 @@ def calculate_race_aas_scores(conn, horses_data, race_info):
         race_info: レース情報
     
     Returns:
-        list: AAS得点が追加された馬データのリスト
+        list: HQS得点が追加された馬データのリスト
     """
     keibajo_code = race_info.get('keibajo_code')
     kyori = safe_int(race_info.get('kyori'))
@@ -408,38 +414,38 @@ def calculate_race_aas_scores(conn, horses_data, race_info):
                     # Shrinkage係数
                     Shr = calculate_shrinkage(N_min)
                     
-                    # AAS得点
-                    aas_score = calculate_aas_score_from_z(ZH, ZR, Shr)
+                    # HQS得点
+                    hqs_score = calculate_hqs_score_from_z(ZH, ZR, Shr)
                     
                     # 競馬場別重みを適用
                     weight = get_factor_weight(keibajo_code, factor_name)
-                    weighted_aas = aas_score * weight
+                    weighted_hqs = hqs_score * weight
                     
                     horse_data['factors'][factor_name]['ZH'] = ZH
                     horse_data['factors'][factor_name]['ZR'] = ZR
                     horse_data['factors'][factor_name]['Shr'] = Shr
-                    horse_data['factors'][factor_name]['aas_score'] = aas_score
+                    horse_data['factors'][factor_name]['hqs_score'] = hqs_score
                     horse_data['factors'][factor_name]['weight'] = weight
-                    horse_data['factors'][factor_name]['weighted_aas'] = weighted_aas
+                    horse_data['factors'][factor_name]['weighted_hqs'] = weighted_hqs
     
-    # 総合AAS得点を計算
+    # 総合HQS得点を計算
     results = []
     for horse_data in horses_hit_ret:
-        total_aas = sum(
-            factor_data['weighted_aas']
+        total_hqs = sum(
+            factor_data['weighted_hqs']
             for factor_data in horse_data['factors'].values()
-            if 'weighted_aas' in factor_data
+            if 'weighted_hqs' in factor_data
         )
         
         result = {
             **horse_data['horse'],
-            'total_aas': total_aas,
+            'total_hqs': total_hqs,
             'factor_details': horse_data['factors']
         }
         results.append(result)
     
     # 総合得点でソート
-    results.sort(key=lambda x: x['total_aas'], reverse=True)
+    results.sort(key=lambda x: x['total_hqs'], reverse=True)
     
     return results
 
@@ -452,8 +458,8 @@ if __name__ == '__main__':
         'cntPlace': 100,
         'rateWinHit': 0.15,
         'ratePlaceHit': 0.45,
-        'rateWinRet': 0.85,
-        'ratePlaceRet': 0.90
+        'adjWinRet': 0.85,
+        'adjPlaceRet': 0.90
     }
     
     Hit_raw, Ret_raw, N_min = calculate_hit_ret_raw(factor_stats)
@@ -465,8 +471,8 @@ if __name__ == '__main__':
     Shr = calculate_shrinkage(N_min)
     print(f"Shrinkage: {Shr:.3f}")
     
-    # AAS得点計算テスト
+    # HQS得点計算テスト
     ZH = 1.5
     ZR = 1.0
-    aas_score = calculate_aas_score_from_z(ZH, ZR, Shr)
-    print(f"AAS Score: {aas_score:.2f}")
+    hqs_score = calculate_hqs_score_from_z(ZH, ZR, Shr)
+    print(f"HQS Score: {hqs_score:.2f}")

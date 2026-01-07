@@ -111,13 +111,16 @@ def get_previous_race_data(conn, ketto_toroku_bango, current_race_date):
         cur = conn.cursor()
         
         # 前走データを取得（今回より前の最新レース）
+        # Phase 1: F22（前走タイム差）、F23（前走上がり3F）を追加
         query = """
             SELECT 
                 se.kakutei_chakujun as chakujun,
                 se.ninkijun as ninki,
                 ra.kyori,
                 ra.babajotai_code_dirt as baba,
-                se.kaisai_nen || se.kaisai_tsukihi as race_date
+                se.kaisai_nen || se.kaisai_tsukihi as race_date,
+                se.time_sa as time_sa,
+                se.kohan_3f as kohan_3f
             FROM nvd_se se
             JOIN nvd_ra ra ON (
                 se.kaisai_nen = ra.kaisai_nen 
@@ -140,7 +143,9 @@ def get_previous_race_data(conn, ketto_toroku_bango, current_race_date):
                 'prev_ninki': safe_int(row[1]),
                 'prev_kyori': safe_int(row[2]),
                 'prev_baba': row[3] if row[3] else '不明',
-                'prev_race_date': row[4] if row[4] else ''
+                'prev_race_date': row[4] if row[4] else '',
+                'prev_time_sa': safe_float(row[5], 0.0),  # F22
+                'prev_kohan_3f': safe_float(row[6], 0.0)  # F23
             }
         else:
             # 前走データがない場合
@@ -149,7 +154,9 @@ def get_previous_race_data(conn, ketto_toroku_bango, current_race_date):
                 'prev_ninki': 0,
                 'prev_kyori': 0,
                 'prev_baba': '不明',
-                'prev_race_date': ''
+                'prev_race_date': '',
+                'prev_time_sa': 0.0,
+                'prev_kohan_3f': 0.0
             }
         
     except Exception as e:
@@ -159,7 +166,9 @@ def get_previous_race_data(conn, ketto_toroku_bango, current_race_date):
             'prev_ninki': 0,
             'prev_kyori': 0,
             'prev_baba': '不明',
-            'prev_race_date': ''
+            'prev_race_date': '',
+            'prev_time_sa': 0.0,
+            'prev_kohan_3f': 0.0
         }
     finally:
         cur.close()
@@ -230,7 +239,35 @@ def extract_single_factors(conn, horse_data, race_data):
         
         'F15_zogen_sa': safe_int(horse_data.get('zogen_sa', 0)),
         
-        'F16_seibetsu': horse_data.get('seibetsu_code', '')
+        'F16_seibetsu': horse_data.get('seibetsu_code', ''),
+        
+        # Phase 1 高優先度ファクター（2026-01-06 追加）
+        'F17_barei': safe_int(horse_data.get('barei', 0)),
+        
+        'F22_prev_time_sa': prev_data.get('prev_time_sa', 0.0),
+        
+        'F23_prev_kohan_3f': prev_data.get('prev_kohan_3f', 0.0),
+        
+        'F28_tosu': safe_int(race_data.get('tosu', 0)),
+        
+        # Phase 2 ファクター（2026-01-07 追加）
+        'F24_prev_wakuban': prev_data.get('prev_wakuban', None),
+        
+        'F25_tansho_odds': safe_float(horse_data.get('tansho_odds', 0.0)),
+        
+        'F26_tansho_ninki': safe_int(horse_data.get('tansho_ninkijun', 0)),
+        
+        'F27_track_code': race_data.get('track_code', ''),
+        
+        'F29_grade_code': race_data.get('grade_code', ''),
+        
+        # Phase 3 血統ファクター（2026-01-07 追加）
+        'B15_f_blood_no': horse_data.get('f_blood_no', None),
+        'B16_m_blood_no': horse_data.get('m_blood_no', None),
+        'B17_ff_blood_no': horse_data.get('ff_blood_no', None),
+        'B18_fm_blood_no': horse_data.get('fm_blood_no', None),
+        'B19_mf_blood_no': horse_data.get('mf_blood_no', None),
+        'B20_mm_blood_no': horse_data.get('mm_blood_no', None)
     }
     
     return factors
