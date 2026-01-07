@@ -222,6 +222,78 @@ def get_kinryo_correction(kinryo: float, bataiju: float) -> Tuple[float, str]:
 
 
 # ============================
+# ペース判定マッピング
+# ============================
+
+def judge_pace_type(zenhan_3f: float, kohan_3f: float, kyori: int, keibajo_code: str) -> Tuple[str, str]:
+    """
+    レースのペースタイプを判定
+    
+    H（ハイペース）: 前半が速い、後半が遅い
+    M（ミドルペース）: 前半・後半がバランス
+    S（スローペース）: 前半が遅い、後半が速い
+    
+    Args:
+        zenhan_3f: 前半3Fタイム（秒）
+        kohan_3f: 後半3Fタイム（秒）
+        kyori: 距離（m）
+        keibajo_code: 競馬場コード
+    
+    Returns:
+        (ペースタイプ, 説明)
+    """
+    # 基準タイムを取得
+    base_zenhan = get_base_time(keibajo_code, kyori, 'zenhan_3f')
+    base_kohan = get_base_time(keibajo_code, kyori, 'kohan_3f')
+    
+    # 基準ペース比率（通常は前半がやや遅い: 0.93-0.95）
+    base_pace_ratio = base_zenhan / base_kohan if base_kohan > 0 else 0.94
+    
+    # 実際のペース比率
+    actual_pace_ratio = zenhan_3f / kohan_3f if kohan_3f > 0 else 0.94
+    
+    # ペース差分
+    pace_diff = actual_pace_ratio - base_pace_ratio
+    
+    # ペース判定
+    if pace_diff >= 0.03:
+        # 前半が基準より0.03以上速い比率 → ハイペース
+        pace_type = 'H'
+        desc = f'ハイペース（前半速い: 比率{actual_pace_ratio:.3f} vs 基準{base_pace_ratio:.3f}）'
+    elif pace_diff <= -0.03:
+        # 前半が基準より0.03以上遅い比率 → スローペース
+        pace_type = 'S'
+        desc = f'スローペース（前半遅い: 比率{actual_pace_ratio:.3f} vs 基準{base_pace_ratio:.3f}）'
+    else:
+        # 基準の±0.03以内 → ミドルペース
+        pace_type = 'M'
+        desc = f'ミドルペース（バランス: 比率{actual_pace_ratio:.3f} vs 基準{base_pace_ratio:.3f}）'
+    
+    return (pace_type, desc)
+
+
+def get_pace_correction_for_agari(pace_type: str) -> Tuple[float, str]:
+    """
+    ペースタイプによる上がり指数への補正
+    
+    Args:
+        pace_type: ペースタイプ（'H', 'M', 'S'）
+    
+    Returns:
+        (補正値_秒, 説明)
+    """
+    if pace_type == 'H':
+        # ハイペース: 前半速い→後半バテる→上がり指数マイナス補正
+        return (-0.5, 'ハイペース（前半速い→後半バテやすい）')
+    elif pace_type == 'S':
+        # スローペース: 前半遅い→後半余力→上がり指数プラス補正
+        return (0.5, 'スローペース（前半遅い→後半余力あり）')
+    else:
+        # ミドルペース: 補正なし
+        return (0.0, 'ミドルペース（バランス）')
+
+
+# ============================
 # 3. テン指数計算
 # ============================
 
@@ -356,12 +428,13 @@ def calculate_agari_index(
     keibajo_code: str,
     furi_code: str = '00',
     kinryo: float = 54.0,
-    bataiju: float = 460.0
+    bataiju: float = 460.0,
+    zenhan_3f: float = 0.0
 ) -> float:
     """
     上がり指数を計算
     
-    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正 + 斤量補正) × 10
+    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正 + 斤量補正 + ペース補正) × 10
     
     Args:
         kohan_3f: 後半3Fタイム（秒）
@@ -371,6 +444,7 @@ def calculate_agari_index(
         furi_code: 不利コード（デフォルト: '00'=なし）
         kinryo: 負担重量（kg, デフォルト: 54.0）
         bataiju: 馬体重（kg, デフォルト: 460.0）
+        zenhan_3f: 前半3Fタイム（ペース判定用、デフォルト: 0.0）
     
     Returns:
         上がり指数（-100 〜 +100）
@@ -393,13 +467,20 @@ def calculate_agari_index(
     # 上がり3Fは斤量の影響が1.2倍（疲労による影響）
     kinryo_correction = kinryo_correction * 1.2
     
+    # ペース補正（ハイペース→上がりマイナス、スローペース→上がりプラス）
+    pace_correction = 0.0
+    pace_desc = 'データなし'
+    if zenhan_3f > 0:
+        pace_type, pace_judge_desc = judge_pace_type(zenhan_3f, kohan_3f, kyori, keibajo_code)
+        pace_correction, pace_desc = get_pace_correction_for_agari(pace_type)
+    
     # 上がり指数計算
-    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction + kinryo_correction) * 10
+    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction + kinryo_correction + pace_correction) * 10
     
     # 範囲制限
     agari_index = max(-100, min(100, agari_index))
     
-    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 斤量補正={kinryo_correction}s [{kinryo_desc}])")
+    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 斤量補正={kinryo_correction}s [{kinryo_desc}], ペース補正={pace_correction}s [{pace_desc}])")
     
     return round(agari_index, 1)
 
@@ -412,22 +493,25 @@ def calculate_pace_index(
     ten_index: float,
     agari_index: float,
     zenhan_3f: float,
-    kohan_3f: float
-) -> float:
+    kohan_3f: float,
+    kyori: int,
+    keibajo_code: str
+) -> Tuple[float, str]:
     """
     ペース指数を計算
     
-    ペース指数 = (テン指数 + 上がり指数) / 2 + ペース配分補正
-    ペース配分補正 = (0.35 - zenhan_3f/kohan_3f) × 10
+    ペース指数 = (テン指数 + 上がり指数) / 2 + ペース配分補正 + ペースタイプ補正
     
     Args:
         ten_index: テン指数
         agari_index: 上がり指数
         zenhan_3f: 前半3Fタイム（秒）
         kohan_3f: 後半3Fタイム（秒）
+        kyori: 距離（m）
+        keibajo_code: 競馬場コード
     
     Returns:
-        ペース指数（-100 〜 +100）
+        (ペース指数（-100 〜 +100）, ペースタイプ)
     """
     # 基本ペース指数（テンと上がりの平均）
     base_pace = (ten_index + agari_index) / 2
@@ -436,15 +520,29 @@ def calculate_pace_index(
     pace_ratio = zenhan_3f / kohan_3f if kohan_3f > 0 else 1.0
     pace_correction = (0.35 - pace_ratio) * 10
     
+    # ペースタイプ判定
+    pace_type, pace_desc = judge_pace_type(zenhan_3f, kohan_3f, kyori, keibajo_code)
+    
+    # ペースタイプによる補正
+    if pace_type == 'H':
+        # ハイペース: 前半速い→全体的にタフなレース→ペース指数プラス
+        pace_type_correction = 5.0
+    elif pace_type == 'S':
+        # スローペース: 前半遅い→楽なレース→ペース指数マイナス
+        pace_type_correction = -5.0
+    else:
+        # ミドルペース: 補正なし
+        pace_type_correction = 0.0
+    
     # ペース指数計算
-    pace_index = base_pace + pace_correction
+    pace_index = base_pace + pace_correction + pace_type_correction
     
     # 範囲制限
     pace_index = max(-100, min(100, pace_index))
     
-    logger.debug(f"ペース指数: {pace_index:.1f} (基本={base_pace:.1f}, ペース比={pace_ratio:.2f}, 補正={pace_correction:.1f})")
+    logger.debug(f"ペース指数: {pace_index:.1f} (基本={base_pace:.1f}, ペース比={pace_ratio:.2f}, 比率補正={pace_correction:.1f}, ペースタイプ={pace_type}[{pace_desc}], タイプ補正={pace_type_correction:.1f})")
     
-    return round(pace_index, 1)
+    return (round(pace_index, 1), pace_type)
 
 
 # ============================
@@ -561,8 +659,8 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         # 各指数を計算
         ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu, kinryo, bataiju)
         position_index = calculate_position_index(corner_1, corner_2, corner_3, corner_4, tosu, wakuban, kyori)
-        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code, kinryo, bataiju)
-        pace_index = calculate_pace_index(ten_index, agari_index, zenhan_3f, kohan_3f)
+        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code, kinryo, bataiju, zenhan_3f)
+        pace_index, pace_type = calculate_pace_index(ten_index, agari_index, zenhan_3f, kohan_3f, kyori, keibajo_code)
         
         # 予想脚質（過去データがある場合）
         past_corners = horse_data.get('past_corners', [])
@@ -573,6 +671,7 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
             'position_index': position_index,
             'agari_index': agari_index,
             'pace_index': pace_index,
+            'pace_type': pace_type,
             'ashishitsu': ashishitsu
         }
     
@@ -583,6 +682,7 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
             'position_index': 50.0,
             'agari_index': 0.0,
             'pace_index': 0.0,
+            'pace_type': 'M',
             'ashishitsu': '自'
         }
 
@@ -641,6 +741,29 @@ if __name__ == "__main__":
         ]
     }
     
+    # ハイペースのテストデータ
+    test_horse_high_pace = {
+        'zenhan_3f': 35.0,  # 前半速い
+        'kohan_3f': 36.0,  # 後半も速いが比率は高い
+        'corner_1': 1,
+        'corner_2': 1,
+        'corner_3': 2,
+        'corner_4': 3,
+        'kyori': 1600,
+        'babajotai_code_dirt': '1',
+        'keibajo_code': '42',
+        'tosu': 12,
+        'furi_code': '00',
+        'wakuban': 1,  # 1枠（最内）
+        'kinryo': 54.0,
+        'bataiju': 460.0,
+        'past_corners': [
+            (1, 1, 2, 3),
+            (1, 1, 1, 1),
+            (2, 2, 2, 2)
+        ]
+    }
+    
     # 指数計算（不利なし）
     indexes = calculate_all_indexes(test_horse)
     
@@ -649,6 +772,7 @@ if __name__ == "__main__":
     print(f"位置指数:   {indexes['position_index']:.1f}")
     print(f"上がり指数: {indexes['agari_index']:.1f}")
     print(f"ペース指数: {indexes['pace_index']:.1f}")
+    print(f"ペースタイプ: {indexes['pace_type']}")
     print(f"予想脚質:   {indexes['ashishitsu']}")
     
     # 指数計算（不利あり＋外枠＋重斤量）
@@ -659,4 +783,16 @@ if __name__ == "__main__":
     print(f"位置指数:   {indexes_furi['position_index']:.1f}")
     print(f"上がり指数: {indexes_furi['agari_index']:.1f}")
     print(f"ペース指数: {indexes_furi['pace_index']:.1f}")
+    print(f"ペースタイプ: {indexes_furi['pace_type']}")
     print(f"予想脚質:   {indexes_furi['ashishitsu']}")
+    
+    # 指数計算（ハイペース）
+    indexes_high = calculate_all_indexes(test_horse_high_pace)
+    
+    print("\n=== HQS指数計算結果（ハイペース）===")
+    print(f"テン指数:   {indexes_high['ten_index']:.1f}")
+    print(f"位置指数:   {indexes_high['position_index']:.1f}")
+    print(f"上がり指数: {indexes_high['agari_index']:.1f}")
+    print(f"ペース指数: {indexes_high['pace_index']:.1f}")
+    print(f"ペースタイプ: {indexes_high['pace_type']}")
+    print(f"予想脚質:   {indexes_high['ashishitsu']}")
