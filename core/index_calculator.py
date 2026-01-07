@@ -13,57 +13,16 @@ JRDB指数体系を地方競馬に適用した5つの指数を計算する：
 """
 
 import math
+import sys
+import os
 from typing import Dict, Optional, List, Tuple
 import logging
 
+# config/base_times.py をインポート
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.base_times import BASE_TIMES, BABA_CORRECTION, ORGANIZERS, get_base_time as config_get_base_time
+
 logger = logging.getLogger(__name__)
-
-
-# ============================
-# 1. 基準値テーブル
-# ============================
-
-# 競馬場・距離別の基準タイム（南関東C2クラス = 0）
-BASE_TIMES = {
-    # 大井競馬場（42）
-    '42': {
-        1200: {'zenhan_3f': 35.5, 'kohan_3f': 38.0},
-        1400: {'zenhan_3f': 36.0, 'kohan_3f': 38.5},
-        1600: {'zenhan_3f': 36.5, 'kohan_3f': 39.0},
-        1800: {'zenhan_3f': 37.0, 'kohan_3f': 39.5},
-        2000: {'zenhan_3f': 37.5, 'kohan_3f': 40.0},
-    },
-    # 川崎競馬場（43）
-    '43': {
-        1400: {'zenhan_3f': 35.8, 'kohan_3f': 38.3},
-        1500: {'zenhan_3f': 36.2, 'kohan_3f': 38.7},
-        1600: {'zenhan_3f': 36.5, 'kohan_3f': 39.0},
-        2000: {'zenhan_3f': 37.5, 'kohan_3f': 40.0},
-    },
-    # 船橋競馬場（44）
-    '44': {
-        1200: {'zenhan_3f': 35.3, 'kohan_3f': 37.8},
-        1500: {'zenhan_3f': 36.0, 'kohan_3f': 38.5},
-        1600: {'zenhan_3f': 36.5, 'kohan_3f': 39.0},
-        1800: {'zenhan_3f': 37.0, 'kohan_3f': 39.5},
-        2400: {'zenhan_3f': 38.0, 'kohan_3f': 40.5},
-    },
-    # 浦和競馬場（45）
-    '45': {
-        1400: {'zenhan_3f': 36.0, 'kohan_3f': 38.5},
-        1500: {'zenhan_3f': 36.2, 'kohan_3f': 38.7},
-        1600: {'zenhan_3f': 36.5, 'kohan_3f': 39.0},
-        2000: {'zenhan_3f': 37.5, 'kohan_3f': 40.0},
-    },
-}
-
-# 馬場状態補正（babajotai_code_dirt）
-BABA_CORRECTION = {
-    '1': 0.0,   # 良
-    '2': 0.3,   # 稍重
-    '3': 0.6,   # 重
-    '4': 1.0,   # 不良
-}
 
 
 # ============================
@@ -92,29 +51,17 @@ def safe_int(value, default: int = 0) -> int:
 
 def get_base_time(keibajo_code: str, kyori: int, time_type: str) -> float:
     """
-    基準タイムを取得
+    基準タイムを取得（config/base_times.pyから）
     
     Args:
-        keibajo_code: 競馬場コード（42-45）
+        keibajo_code: 競馬場コード（30-65）
         kyori: 距離（m）
         time_type: 'zenhan_3f' or 'kohan_3f'
     
     Returns:
         基準タイム（秒）
     """
-    if keibajo_code not in BASE_TIMES:
-        logger.warning(f"未対応の競馬場コード: {keibajo_code}")
-        return 36.5 if time_type == 'zenhan_3f' else 39.0
-    
-    # 最も近い距離の基準タイムを取得
-    venue_times = BASE_TIMES[keibajo_code]
-    if kyori in venue_times:
-        return venue_times[kyori][time_type]
-    
-    # 距離が完全一致しない場合は最も近いものを使用
-    closest_kyori = min(venue_times.keys(), key=lambda k: abs(k - kyori))
-    logger.info(f"距離 {kyori}m の基準タイムなし。{closest_kyori}m を使用")
-    return venue_times[closest_kyori][time_type]
+    return config_get_base_time(keibajo_code, kyori, time_type)
 
 
 def get_baba_correction_value(baba_code: str) -> float:
