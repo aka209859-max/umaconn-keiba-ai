@@ -163,8 +163,8 @@ SELECT
 FROM corner_stats
 WHERE (late_avg - early_avg) > 3.0
   AND rank_std > 2.5
-  -- 🚫 除外: 「逃げ失速」パターン（前半3番手以内 → 4頭以上後退）
-  AND NOT (early_avg <= 3.0 AND (late_avg - early_avg) > 4.0);
+  -- 🚫 除外: 「逃げ失速」パターン（前半2番手以内 → 4頭以上後退）
+  AND NOT (early_avg <= 2.0 AND (late_avg - early_avg) > 4.0);
 
 SELECT '✅ Step 3完了: 順位逆転検知' as status, COUNT(*) as detected_count FROM temp_rank_reversal;
 

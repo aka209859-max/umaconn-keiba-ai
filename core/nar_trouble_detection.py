@@ -190,9 +190,9 @@ class TroubleDetector:
                 rank_decline = late_avg - early_avg
                 
                 # 🚫 除外パターン: 「逃げ失速」の検知
-                # 前半1-3番手 → 後半大幅後退 = 逃げてバテただけ（不利ではない）
+                # 前半1-2番手 → 後半大幅後退 = 逃げてバテただけ（不利ではない）
                 is_front_runner_fade = (
-                    early_avg <= 3.0 and  # 前半3番手以内
+                    early_avg <= 2.0 and  # 前半2番手以内
                     rank_decline > 4.0     # 4頭以上後退
                 )
                 
