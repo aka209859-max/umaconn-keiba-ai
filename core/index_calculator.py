@@ -176,6 +176,52 @@ def get_wakuban_correction(wakuban: int, tosu: int, kyori: int) -> Tuple[float, 
 
 
 # ============================
+# 斤量補正マッピング
+# ============================
+
+def get_kinryo_correction(kinryo: float, bataiju: float) -> Tuple[float, str]:
+    """
+    斤量補正値を計算
+    
+    JRAの統計では、1kgあたり約0.2秒（200m）の差
+    地方競馬も同様と仮定し、1kgあたり0.1秒の補正
+    
+    Args:
+        kinryo: 負担重量（kg）
+        bataiju: 馬体重（kg）
+    
+    Returns:
+        (補正値_秒, 説明)
+    """
+    if kinryo <= 0:
+        return (0.0, 'データなし')
+    
+    # 基準斤量: 地方競馬C2クラスの標準斤量 54kg
+    base_kinryo = 54.0
+    
+    # 斤量差（kg）
+    kinryo_diff = kinryo - base_kinryo
+    
+    # 斤量補正: 1kgあたり0.1秒
+    # 重い場合は負の補正（タイム差が開く）、軽い場合は正の補正（タイムが速くなる）
+    kinryo_correction = -kinryo_diff * 0.1
+    
+    # 馬体重による補正（オプション: 馬体重が大きいほど斤量の影響が小さい）
+    if bataiju > 0:
+        # 標準馬体重: 460kg
+        weight_ratio = bataiju / 460.0
+        # 馬体重が大きいほど斤量の影響が小さい（0.9〜1.1の範囲で調整）
+        weight_factor = 0.9 + (1.0 - weight_ratio) * 0.2
+        weight_factor = max(0.8, min(1.2, weight_factor))
+        kinryo_correction = kinryo_correction * weight_factor
+        desc = f'斤量{kinryo:.1f}kg（基準{base_kinryo}kg）, 馬体重{bataiju}kg'
+    else:
+        desc = f'斤量{kinryo:.1f}kg（基準{base_kinryo}kg）'
+    
+    return (round(kinryo_correction, 2), desc)
+
+
+# ============================
 # 3. テン指数計算
 # ============================
 
@@ -186,12 +232,14 @@ def calculate_ten_index(
     keibajo_code: str,
     furi_code: str = '00',
     wakuban: int = 0,
-    tosu: int = 12
+    tosu: int = 12,
+    kinryo: float = 54.0,
+    bataiju: float = 460.0
 ) -> float:
     """
     テン指数を計算
     
-    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正 + 枠順補正) × 10
+    テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正 + 枠順補正 + 斤量補正) × 10
     
     Args:
         zenhan_3f: 前半3Fタイム（秒）
@@ -201,6 +249,8 @@ def calculate_ten_index(
         furi_code: 不利コード（デフォルト: '00'=なし）
         wakuban: 枠番（デフォルト: 0=補正なし）
         tosu: 出走頭数（デフォルト: 12）
+        kinryo: 負担重量（kg, デフォルト: 54.0）
+        bataiju: 馬体重（kg, デフォルト: 460.0）
     
     Returns:
         テン指数（-100 〜 +100）
@@ -223,13 +273,16 @@ def calculate_ten_index(
     if kyori >= 1800:  # 中長距離ではテン指数への枠順影響は小さい
         waku_correction = waku_correction * 0.3
     
+    # 斤量補正
+    kinryo_correction, kinryo_desc = get_kinryo_correction(kinryo, bataiju)
+    
     # テン指数計算
-    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction) * 10
+    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction + kinryo_correction) * 10
     
     # 範囲制限
     ten_index = max(-100, min(100, ten_index))
     
-    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 枠順補正={waku_correction}s [{waku_desc}])")
+    logger.debug(f"テン指数: {ten_index:.1f} (3F={zenhan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 枠順補正={waku_correction}s [{waku_desc}], 斤量補正={kinryo_correction}s [{kinryo_desc}])")
     
     return round(ten_index, 1)
 
@@ -301,12 +354,14 @@ def calculate_agari_index(
     kyori: int,
     baba_code: str,
     keibajo_code: str,
-    furi_code: str = '00'
+    furi_code: str = '00',
+    kinryo: float = 54.0,
+    bataiju: float = 460.0
 ) -> float:
     """
     上がり指数を計算
     
-    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正) × 10
+    上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正 + 斤量補正) × 10
     
     Args:
         kohan_3f: 後半3Fタイム（秒）
@@ -314,6 +369,8 @@ def calculate_agari_index(
         baba_code: 馬場状態コード
         keibajo_code: 競馬場コード
         furi_code: 不利コード（デフォルト: '00'=なし）
+        kinryo: 負担重量（kg, デフォルト: 54.0）
+        bataiju: 馬体重（kg, デフォルト: 460.0）
     
     Returns:
         上がり指数（-100 〜 +100）
@@ -331,13 +388,18 @@ def calculate_agari_index(
     if furi_code not in agari_furi_codes:
         furi_correction = 0.0
     
+    # 斤量補正（上がりタイムは斤量の影響が大きい）
+    kinryo_correction, kinryo_desc = get_kinryo_correction(kinryo, bataiju)
+    # 上がり3Fは斤量の影響が1.2倍（疲労による影響）
+    kinryo_correction = kinryo_correction * 1.2
+    
     # 上がり指数計算
-    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction) * 10
+    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction + kinryo_correction) * 10
     
     # 範囲制限
     agari_index = max(-100, min(100, agari_index))
     
-    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}])")
+    logger.debug(f"上がり指数: {agari_index:.1f} (3F={kohan_3f}s, 基準={base_time}s, 馬場補正={baba_correction}s, 不利補正={furi_correction}s [{furi_desc}], 斤量補正={kinryo_correction}s [{kinryo_desc}])")
     
     return round(agari_index, 1)
 
@@ -493,11 +555,13 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         tosu = safe_int(horse_data.get('tosu'), 12)
         furi_code = str(horse_data.get('furi_code', '00'))
         wakuban = safe_int(horse_data.get('wakuban'), 0)
+        kinryo = safe_float(horse_data.get('kinryo'), 54.0)
+        bataiju = safe_float(horse_data.get('bataiju'), 460.0)
         
         # 各指数を計算
-        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu)
+        ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu, kinryo, bataiju)
         position_index = calculate_position_index(corner_1, corner_2, corner_3, corner_4, tosu, wakuban, kyori)
-        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code)
+        agari_index = calculate_agari_index(kohan_3f, kyori, baba_code, keibajo_code, furi_code, kinryo, bataiju)
         pace_index = calculate_pace_index(ten_index, agari_index, zenhan_3f, kohan_3f)
         
         # 予想脚質（過去データがある場合）
@@ -545,6 +609,8 @@ if __name__ == "__main__":
         'tosu': 12,
         'furi_code': '00',  # 不利なし
         'wakuban': 3,  # 3枠（内枠寄り）
+        'kinryo': 54.0,  # 標準斤量
+        'bataiju': 460.0,  # 標準馬体重
         'past_corners': [
             (2, 2, 3, 2),
             (1, 1, 2, 1),
@@ -552,7 +618,7 @@ if __name__ == "__main__":
         ]
     }
     
-    # 不利あり＋外枠のテストデータ
+    # 不利あり＋外枠＋重斤量のテストデータ
     test_horse_furi = {
         'zenhan_3f': 36.5,
         'kohan_3f': 39.5,
@@ -566,6 +632,8 @@ if __name__ == "__main__":
         'tosu': 12,
         'furi_code': '10',  # 大外を回される
         'wakuban': 8,  # 8枠（最外）
+        'kinryo': 57.0,  # 重斤量（+3kg）
+        'bataiju': 440.0,  # 軽めの馬体重
         'past_corners': [
             (8, 7, 6, 5),
             (9, 8, 7, 6),
@@ -583,10 +651,10 @@ if __name__ == "__main__":
     print(f"ペース指数: {indexes['pace_index']:.1f}")
     print(f"予想脚質:   {indexes['ashishitsu']}")
     
-    # 指数計算（不利あり）
+    # 指数計算（不利あり＋外枠＋重斤量）
     indexes_furi = calculate_all_indexes(test_horse_furi)
     
-    print("\n=== HQS指数計算結果（大外を回される）===")
+    print("\n=== HQS指数計算結果（大外を回される＋重斤量）===")
     print(f"テン指数:   {indexes_furi['ten_index']:.1f}")
     print(f"位置指数:   {indexes_furi['position_index']:.1f}")
     print(f"上がり指数: {indexes_furi['agari_index']:.1f}")
