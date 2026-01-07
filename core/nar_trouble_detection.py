@@ -189,6 +189,21 @@ class TroubleDetector:
                 # 順位後退数（正の値 = 後退）
                 rank_decline = late_avg - early_avg
                 
+                # 🚫 除外パターン: 「逃げ失速」の検知
+                # 前半1-3番手 → 後半大幅後退 = 逃げてバテただけ（不利ではない）
+                is_front_runner_fade = (
+                    early_avg <= 3.0 and  # 前半3番手以内
+                    rank_decline > 4.0     # 4頭以上後退
+                )
+                
+                if is_front_runner_fade:
+                    logger.info(
+                        f"逃げ失速パターン除外: {horse['ketto_toroku_bango']} "
+                        f"(前半平均={early_avg:.1f}, 後退={rank_decline:.1f}頭) "
+                        f"→ 不利ではない"
+                    )
+                    continue
+                
                 # 判定基準:
                 # 1. 3頭以上後退 AND 順位変動が大きい
                 if rank_decline > self.RANK_DECLINE_THRESHOLD and rank_std > self.RANK_STD_THRESHOLD:
