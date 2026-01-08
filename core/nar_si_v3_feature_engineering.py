@@ -1,0 +1,278 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+NAR-SI Ver.3.0 - 特徴量エンジニアリング（2モデルアプローチ）
+
+南関東4場（KB42,43,44,45）とその他競馬場で異なる特徴量セットを生成
+"""
+
+import sys
+import os
+
+# プロジェクトルートをパスに追加
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+sys.path.append('E:/UmaData/nar-analytics-python')
+
+from config.db_config import get_db_connection
+import numpy as np
+from datetime import datetime
+
+
+# 南関東4場の定義
+NANKANTO_VENUES = ['42', '43', '44', '45']
+
+
+def is_nankanto(keibajo_code):
+    """
+    南関東4場かどうかを判定
+    
+    Args:
+        keibajo_code: 競馬場コード
+    
+    Returns:
+        bool: 南関東4場ならTrue
+    """
+    return str(keibajo_code) in NANKANTO_VENUES
+
+
+def calculate_trend(values):
+    """
+    トレンド指標を計算（最新値から最古値への変化）
+    
+    Args:
+        values: 数値リスト（新しい順）
+    
+    Returns:
+        float: トレンド値（正=上昇、負=下降）
+    """
+    if len(values) < 2:
+        return 0.0
+    
+    # 線形回帰の傾き
+    x = np.arange(len(values))
+    y = np.array(values)
+    
+    if len(x) == 0 or len(y) == 0:
+        return 0.0
+    
+    try:
+        # 最小二乗法で傾きを計算
+        slope = np.polyfit(x, y, 1)[0]
+        return float(slope)
+    except:
+        return 0.0
+
+
+def generate_common_features(past_races, current_race_info):
+    """
+    共通特徴量を生成（全競馬場で使用）
+    
+    Args:
+        past_races: 過去3走のデータリスト（新しい順）
+        current_race_info: 今回のレース情報
+    
+    Returns:
+        dict: 共通特徴量
+    """
+    features = {}
+    
+    # 過去走数（データ不足対策）
+    features['past_race_count'] = len(past_races)
+    
+    # 過去3走のNAR-SI
+    for i, race in enumerate(past_races[:3], 1):
+        features[f'prev{i}_nar_si'] = race.get('nar_si', 0.0)
+    
+    # データ不足の場合は平均値で埋める
+    if len(past_races) < 3:
+        avg_nar_si = np.mean([r.get('nar_si', 0.0) for r in past_races]) if past_races else 50.0
+        for i in range(len(past_races) + 1, 4):
+            features[f'prev{i}_nar_si'] = avg_nar_si
+    
+    # 過去3走の着順
+    for i, race in enumerate(past_races[:3], 1):
+        finish = race.get('kakutei_chakujun', '99')
+        try:
+            features[f'prev{i}_finish'] = int(finish)
+        except:
+            features[f'prev{i}_finish'] = 99
+    
+    if len(past_races) < 3:
+        for i in range(len(past_races) + 1, 4):
+            features[f'prev{i}_finish'] = 99
+    
+    # 過去3走の馬体重
+    for i, race in enumerate(past_races[:3], 1):
+        features[f'prev{i}_weight'] = race.get('bataiju', 0)
+    
+    if len(past_races) < 3:
+        avg_weight = np.mean([r.get('bataiju', 450) for r in past_races]) if past_races else 450
+        for i in range(len(past_races) + 1, 4):
+            features[f'prev{i}_weight'] = int(avg_weight)
+    
+    # NAR-SIのトレンド指標
+    nar_si_values = [race.get('nar_si', 0.0) for race in past_races[:3]]
+    if len(nar_si_values) >= 2:
+        features['nar_si_trend'] = calculate_trend(nar_si_values)
+        features['nar_si_avg'] = float(np.mean(nar_si_values))
+        features['nar_si_std'] = float(np.std(nar_si_values))
+        features['nar_si_max'] = float(np.max(nar_si_values))
+        features['nar_si_min'] = float(np.min(nar_si_values))
+    else:
+        features['nar_si_trend'] = 0.0
+        features['nar_si_avg'] = nar_si_values[0] if nar_si_values else 50.0
+        features['nar_si_std'] = 0.0
+        features['nar_si_max'] = nar_si_values[0] if nar_si_values else 50.0
+        features['nar_si_min'] = nar_si_values[0] if nar_si_values else 50.0
+    
+    # 馬体重の変化
+    if len(past_races) >= 2:
+        weight1 = past_races[0].get('bataiju', 0)
+        weight2 = past_races[1].get('bataiju', 0)
+        features['weight_change'] = weight1 - weight2
+    else:
+        features['weight_change'] = 0
+    
+    # 条件適性
+    current_venue = current_race_info.get('keibajo_code', '')
+    current_kyori = int(current_race_info.get('kyori', 0)) if current_race_info.get('kyori') else 0
+    
+    # 同競馬場率
+    same_venue_count = sum(1 for r in past_races[:3] if r.get('keibajo_code') == current_venue)
+    features['same_venue_rate'] = same_venue_count / min(3, len(past_races)) if past_races else 0.0
+    
+    # 同距離率（±100m以内）
+    same_distance_count = sum(1 for r in past_races[:3] 
+                              if abs(int(r.get('kyori', 0)) - current_kyori) <= 100)
+    features['same_distance_rate'] = same_distance_count / min(3, len(past_races)) if past_races else 0.0
+    
+    # 前走からの日数
+    if past_races:
+        try:
+            current_date = datetime.strptime(
+                current_race_info.get('kaisai_nen', '2024') + 
+                current_race_info.get('kaisai_tsukihi', '0101'), 
+                '%Y%m%d'
+            )
+            prev_date = datetime.strptime(past_races[0].get('kaisai_date', '20240101'), '%Y%m%d')
+            features['days_since_last'] = (current_date - prev_date).days
+        except:
+            features['days_since_last'] = 30
+    else:
+        features['days_since_last'] = 30
+    
+    # 距離差
+    if past_races:
+        prev_kyori = int(past_races[0].get('kyori', current_kyori)) if past_races[0].get('kyori') else current_kyori
+        features['distance_diff'] = current_kyori - prev_kyori
+    else:
+        features['distance_diff'] = 0
+    
+    # レース条件（カテゴリ変数）
+    features['keibajo_code'] = int(current_venue) if current_venue else 0
+    features['kyori'] = current_kyori
+    features['track_code'] = current_race_info.get('track_code', '0')
+    features['babajotai_code'] = current_race_info.get('babajotai_code', '0')
+    features['is_night_race'] = 1 if int(current_race_info.get('hasso_jikoku', '0')) >= 1700 else 0
+    
+    return features
+
+
+def generate_nankanto_features(past_races):
+    """
+    南関東4場限定の特徴量を生成
+    
+    Args:
+        past_races: 過去3走のデータリスト（新しい順）
+    
+    Returns:
+        dict: 南関東限定特徴量
+    """
+    features = {}
+    
+    # 過去3走の後半3F（南関東のみ記録あり）
+    for i, race in enumerate(past_races[:3], 1):
+        kohan_3f_raw = race.get('kohan_3f', '000')
+        if kohan_3f_raw and kohan_3f_raw != '000':
+            try:
+                features[f'prev{i}_kohan_3f'] = float(kohan_3f_raw) / 10.0
+            except:
+                features[f'prev{i}_kohan_3f'] = 0.0
+        else:
+            features[f'prev{i}_kohan_3f'] = 0.0
+    
+    # データ不足の場合
+    if len(past_races) < 3:
+        for i in range(len(past_races) + 1, 4):
+            features[f'prev{i}_kohan_3f'] = 0.0
+    
+    # ペース指数（後半3F / 走破タイムの比率）
+    for i, race in enumerate(past_races[:3], 1):
+        kohan_3f = features.get(f'prev{i}_kohan_3f', 0.0)
+        soha_time_raw = race.get('soha_time', '0')
+        
+        if kohan_3f > 0 and soha_time_raw and soha_time_raw != '0':
+            try:
+                soha_time = float(soha_time_raw) / 10.0
+                pace_ratio = kohan_3f / soha_time if soha_time > 0 else 0.0
+                # 0.35が標準、それより小さいほど後半型（末脚がある）
+                features[f'prev{i}_pace_index'] = (0.35 - pace_ratio) * 10
+            except:
+                features[f'prev{i}_pace_index'] = 0.0
+        else:
+            features[f'prev{i}_pace_index'] = 0.0
+    
+    # ペース指数の平均・トレンド
+    pace_values = [features.get(f'prev{i}_pace_index', 0.0) for i in range(1, 4)]
+    if any(v != 0.0 for v in pace_values):
+        non_zero_values = [v for v in pace_values if v != 0.0]
+        features['avg_pace_index'] = float(np.mean(non_zero_values)) if non_zero_values else 0.0
+        features['pace_trend'] = calculate_trend(pace_values) if len(pace_values) >= 2 else 0.0
+    else:
+        features['avg_pace_index'] = 0.0
+        features['pace_trend'] = 0.0
+    
+    return features
+
+
+def generate_features(past_races, current_race_info):
+    """
+    競馬場に応じた特徴量セットを生成
+    
+    Args:
+        past_races: 過去3走のデータリスト（新しい順）
+        current_race_info: 今回のレース情報
+    
+    Returns:
+        dict: 特徴量辞書
+    """
+    # 共通特徴量
+    features = generate_common_features(past_races, current_race_info)
+    
+    # 南関東4場の場合は追加特徴量
+    if is_nankanto(current_race_info.get('keibajo_code', '')):
+        features['is_nankanto'] = 1
+        nankanto_features = generate_nankanto_features(past_races)
+        features.update(nankanto_features)
+    else:
+        features['is_nankanto'] = 0
+    
+    return features
+
+
+if __name__ == '__main__':
+    # テスト用コード
+    print("NAR-SI Ver.3.0 特徴量エンジニアリングモジュール")
+    print("=" * 80)
+    print()
+    print("✅ 2モデルアプローチ対応")
+    print("   - 南関東4場: 25特徴量（後半3F含む）")
+    print("   - その他競馬場: 18特徴量（後半3F除外）")
+    print()
+    print("主要関数:")
+    print("  - generate_common_features(): 共通特徴量生成")
+    print("  - generate_nankanto_features(): 南関東限定特徴量生成")
+    print("  - generate_features(): 統合特徴量生成")
