@@ -270,7 +270,7 @@ def calculate_base_times_from_real_data():
             f.write(f"  '{keibajo_code}': {{  # {keibajo_name}\n")
             for kyori in sorted(base_times[keibajo_code].keys()):
                 data = base_times[keibajo_code][kyori]
-                f.write(f"    {kyori}: {{'zenhan_3f': {data['zenhan_3f']}, 'kohan_3f': {data['kohan_3f']}, 'race_count': {data['race_count']}}},\n")
+                f.write(f"    {kyori}: {{'soha_time': {data['soha_time']}, 'zenhan_3f': {data['zenhan_3f']}, 'kohan_3f': {data['kohan_3f']}, 'race_count': {data['race_count']}}},\n")
             f.write("  },\n")
         f.write("}\n")
         
