@@ -110,6 +110,58 @@ def get_period_for_track(keibajo_code: str) -> Tuple[str, str, str]:
 # データ取得
 # ================================================================================
 
+def parse_corner_position(corner_str: str, umaban: str) -> int:
+    """
+    nvd_ra.corner_tsuka_juni_X から指定馬番のコーナー順位を取得
+    
+    フォーマット例: "21(3,5),8,10,1,4,13,"
+    - 2 = 2番馬が1位
+    - 1 = 1番馬が2位  
+    - (3,5) = 3番馬と5番馬が同着3位
+    - 8 = 8番馬が5位
+    
+    Args:
+        corner_str: コーナー通過順位文字列
+        umaban: 馬番（文字列または整数）
+    
+    Returns:
+        コーナー順位（見つからない場合は0）
+    """
+    if not corner_str or corner_str.strip() == '' or corner_str == '00':
+        return 0
+    
+    try:
+        target_umaban = str(umaban).strip()
+        position = 1  # 順位カウンター
+        
+        # カンマで分割
+        parts = corner_str.strip(',').split(',')
+        
+        for part in parts:
+            part = part.strip()
+            if not part:
+                continue
+            
+            # 同着の場合: (3,5) のような形式
+            if part.startswith('(') and part.endswith(')'):
+                # カッコ内の馬番を分割
+                horses = part[1:-1].split(',')
+                for horse in horses:
+                    if horse.strip() == target_umaban:
+                        return position
+                position += len(horses)
+            else:
+                # 通常の場合
+                if part == target_umaban:
+                    return position
+                position += 1
+        
+        return 0  # 見つからない場合
+    except Exception as e:
+        logger.warning(f"コーナー順位パースエラー (馬番{umaban}): {e}")
+        return 0
+
+
 def parse_fukusho_odds(odds_fukusho_str: str, umaban: str) -> float:
     """
     nvd_o1.odds_fukusho から指定馬番の複勝オッズを取得
@@ -166,12 +218,12 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         ra.kyori,
         ra.track_code,
         ra.babajotai_code_dirt as baba_code,
+        ra.corner_tsuka_juni_1,
+        ra.corner_tsuka_juni_2,
+        ra.corner_tsuka_juni_3,
+        ra.corner_tsuka_juni_4,
         se.umaban,
         se.kakutei_chakujun,
-        se.corner_1,
-        se.corner_2,
-        se.corner_3,
-        se.corner_4,
         se.kohan_3f,
         se.soha_time,
         se.tansho_odds,
@@ -208,6 +260,13 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     races = []
     for row in cursor.fetchall():
         race_data = dict(zip(columns, row))
+        
+        # nvd_ra.corner_tsuka_juni_X から個別馬のコーナー順位を抽出
+        umaban = race_data.get('umaban', '01')
+        race_data['corner_1'] = parse_corner_position(race_data.get('corner_tsuka_juni_1', ''), umaban)
+        race_data['corner_2'] = parse_corner_position(race_data.get('corner_tsuka_juni_2', ''), umaban)
+        race_data['corner_3'] = parse_corner_position(race_data.get('corner_tsuka_juni_3', ''), umaban)
+        race_data['corner_4'] = parse_corner_position(race_data.get('corner_tsuka_juni_4', ''), umaban)
         
         # nvd_o1.odds_fukusho から馬番のオッズを抽出
         if 'odds_fukusho' in race_data and race_data['odds_fukusho']:
