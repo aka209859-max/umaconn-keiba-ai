@@ -125,8 +125,7 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         se.corner_4,
         se.kohan_3f,
         se.soha_time,
-        se.tansho_odds,
-        se.fukusho_odds
+        se.tansho_odds
     FROM nvd_ra ra
     JOIN nvd_se se ON 
         ra.kaisai_nen = se.kaisai_nen AND
