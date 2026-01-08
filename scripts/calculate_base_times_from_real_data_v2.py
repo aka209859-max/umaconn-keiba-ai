@@ -67,7 +67,7 @@ def calculate_base_times_from_real_data():
                 se.kohan_3f,
                 se.corner_1,
                 se.corner_2,
-                ra.tosu,
+                ra.shusso_tosu,
                 se.kakutei_chakujun
             FROM nvd_ra ra
             JOIN nvd_se se ON 
@@ -77,7 +77,7 @@ def calculate_base_times_from_real_data():
                 ra.race_bango = se.race_bango
             WHERE ra.keibajo_code = %s
                 AND ra.kyori = %s
-                AND ra.baba_jotai = '良'
+                AND (ra.babajotai_code_dirt = '10' OR ra.babajotai_code_shiba = '10')
                 AND se.soha_time > 0
                 AND se.kohan_3f > 0
                 AND se.kakutei_chakujun IS NOT NULL
@@ -101,7 +101,7 @@ def calculate_base_times_from_real_data():
                 kohan_3f = float(row[1])
                 corner_1 = int(row[2]) if row[2] and str(row[2]).isdigit() else 0
                 corner_2 = int(row[3]) if row[3] and str(row[3]).isdigit() else 0
-                tosu = int(row[4]) if row[4] else 12
+                shusso_tosu = int(row[4]) if row[4] else 12
                 
                 # 前半3Fを推定
                 if kyori == 1200:
@@ -115,7 +115,7 @@ def calculate_base_times_from_real_data():
                         kyori=kyori,
                         corner_1=corner_1,
                         corner_2=corner_2,
-                        field_size=tosu
+                        field_size=shusso_tosu
                     )
                 
                 # 物理的限界値でクランプ
