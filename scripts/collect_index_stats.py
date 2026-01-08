@@ -102,6 +102,47 @@ def get_period_for_track(keibajo_code: str) -> Tuple[str, str, str]:
 # データ取得
 # ================================================================================
 
+def parse_fukusho_odds(odds_fukusho_str: str, umaban: str) -> float:
+    """
+    nvd_od.odds_fukusho から指定馬番の複勝オッズを取得
+    
+    フォーマット: 固定長 336文字
+    各馬番のオッズは16文字ブロック:
+    - 馬番(2桁) + オッズ(5桁) + 人気(3桁) + 票数(5桁) + 予備(1桁)
+    
+    例: 01001000130 = 馬番01、オッズ10.0、人気013
+    """
+    if not odds_fukusho_str or odds_fukusho_str.strip() == '':
+        return 0.0
+    
+    try:
+        # 馬番を2桁に変換
+        target_umaban = str(umaban).zfill(2)
+        
+        # 16文字ごとに分割
+        block_size = 16
+        for i in range(0, len(odds_fukusho_str), block_size):
+            block = odds_fukusho_str[i:i+block_size]
+            if len(block) < 7:  # 最低限のデータがない場合スキップ
+                continue
+            
+            # 馬番(2桁) + オッズ(5桁)
+            uma = block[0:2]
+            odds_str = block[2:7]
+            
+            if uma == target_umaban:
+                # オッズ文字列を数値に変換（例: "00130" → 1.3）
+                if odds_str.strip() == '' or '*' in odds_str or '-' in odds_str:
+                    return 0.0
+                odds_value = float(odds_str) / 100.0
+                return odds_value
+        
+        return 0.0
+    except Exception as e:
+        print(f"Warning: 複勝オッズパースエラー (馬番{umaban}): {e}")
+        return 0.0
+
+
 def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -> List[Dict]:
     """
     指定期間・競馬場のレースデータを取得
@@ -126,23 +167,18 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         se.kohan_3f,
         se.soha_time,
         se.tansho_odds,
-        CASE 
-            WHEN hr.haraimodoshi_fukusho_1b IS NOT NULL 
-            THEN hr.haraimodoshi_fukusho_1b / 100.0 
-            ELSE 0 
-        END as fukusho_odds
+        od.odds_fukusho
     FROM nvd_ra ra
     JOIN nvd_se se ON 
         ra.kaisai_nen = se.kaisai_nen AND
         ra.kaisai_tsukihi = se.kaisai_tsukihi AND
         ra.keibajo_code = se.keibajo_code AND
         ra.race_bango = se.race_bango
-    LEFT JOIN nvd_hr hr ON
-        ra.kaisai_nen = hr.kaisai_nen AND
-        ra.kaisai_tsukihi = hr.kaisai_tsukihi AND
-        ra.keibajo_code = hr.keibajo_code AND
-        ra.race_bango = hr.race_bango AND
-        se.umaban = hr.umaban
+    LEFT JOIN nvd_od od ON
+        ra.kaisai_nen = od.kaisai_nen AND
+        ra.kaisai_tsukihi = od.kaisai_tsukihi AND
+        ra.keibajo_code = od.keibajo_code AND
+        ra.race_bango = od.race_bango
     WHERE ra.keibajo_code = %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
@@ -162,7 +198,19 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     columns = [desc[0] for desc in cursor.description]
     races = []
     for row in cursor.fetchall():
-        races.append(dict(zip(columns, row)))
+        race_data = dict(zip(columns, row))
+        
+        # nvd_od.odds_fukusho から馬番のオッズを抽出
+        if 'odds_fukusho' in race_data and race_data['odds_fukusho']:
+            fukusho_odds = parse_fukusho_odds(
+                race_data['odds_fukusho'], 
+                race_data.get('umaban', '01')
+            )
+            race_data['fukusho_odds'] = fukusho_odds
+        else:
+            race_data['fukusho_odds'] = 0.0
+        
+        races.append(race_data)
     
     cursor.close()
     return races
