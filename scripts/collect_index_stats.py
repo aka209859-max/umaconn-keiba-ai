@@ -415,13 +415,27 @@ def save_stats_to_db(conn, keibajo_code: str, stats: Dict):
         safe_total_win_odds = min(99999999.99, round(data['total_win_odds'], 2))
         safe_total_place_odds = min(99999999.99, round(data['total_place_odds'], 2))
         
-        cursor.execute(insert_query, (
-            keibajo_code, index_type, str(index_value),
-            data['cnt_win'], data['hit_win'], round(rate_win_hit, 2), 
-            safe_total_win_odds, adj_win_ret,
-            data['cnt_place'], data['hit_place'], round(rate_place_hit, 2),
-            safe_total_place_odds, adj_place_ret
-        ))
+        # すべての数値を安全な範囲に制限
+        safe_rate_win_hit = max(-99999999.99, min(99999999.99, round(rate_win_hit, 2)))
+        safe_rate_place_hit = max(-99999999.99, min(99999999.99, round(rate_place_hit, 2)))
+        safe_adj_win_ret = max(-99999999.99, min(99999999.99, round(adj_win_ret, 2)))
+        safe_adj_place_ret = max(-99999999.99, min(99999999.99, round(adj_place_ret, 2)))
+        
+        try:
+            cursor.execute(insert_query, (
+                keibajo_code, index_type, str(index_value),
+                data['cnt_win'], data['hit_win'], safe_rate_win_hit, 
+                safe_total_win_odds, safe_adj_win_ret,
+                data['cnt_place'], data['hit_place'], safe_rate_place_hit,
+                safe_total_place_odds, safe_adj_place_ret
+            ))
+        except Exception as e:
+            logger.error(f"データ挿入エラー: {keibajo_code}, {index_type}, {index_value}")
+            logger.error(f"  cnt_win={data['cnt_win']}, hit_win={data['hit_win']}, rate_win_hit={safe_rate_win_hit}")
+            logger.error(f"  total_win_odds={safe_total_win_odds}, adj_win_ret={safe_adj_win_ret}")
+            logger.error(f"  cnt_place={data['cnt_place']}, hit_place={data['hit_place']}, rate_place_hit={safe_rate_place_hit}")
+            logger.error(f"  total_place_odds={safe_total_place_odds}, adj_place_ret={safe_adj_place_ret}")
+            raise
     
     conn.commit()
     cursor.close()
