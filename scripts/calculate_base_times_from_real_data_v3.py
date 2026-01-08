@@ -62,14 +62,14 @@ def calculate_base_times_from_real_data():
         
         for kyori in kyori_list:
             # レースデータを取得（良馬場・上位5頭）
-            # 注意: track_code='10'（良馬場）を使用
+            # 注意: 文字列型のカラムは型キャスト必須
             cur.execute("""
             SELECT 
-                se.soha_time,
-                se.kohan_3f,
-                se.corner_1,
-                se.corner_2,
-                ra.shusso_tosu,
+                CAST(se.soha_time AS FLOAT) as soha_time,
+                CAST(se.kohan_3f AS FLOAT) as kohan_3f,
+                CASE WHEN se.corner_1 ~ '^[0-9]+$' THEN CAST(se.corner_1 AS INTEGER) ELSE 0 END as corner_1,
+                CASE WHEN se.corner_2 ~ '^[0-9]+$' THEN CAST(se.corner_2 AS INTEGER) ELSE 0 END as corner_2,
+                CAST(ra.shusso_tosu AS INTEGER) as shusso_tosu,
                 se.kakutei_chakujun
             FROM nvd_ra ra
             JOIN nvd_se se ON 
@@ -80,8 +80,14 @@ def calculate_base_times_from_real_data():
             WHERE ra.keibajo_code = %s
                 AND ra.kyori = %s
                 AND (ra.babajotai_code_dirt = '10' OR ra.babajotai_code_shiba = '10')
-                AND se.soha_time > 0
-                AND se.kohan_3f > 0
+                AND se.soha_time IS NOT NULL
+                AND se.soha_time != ''
+                AND se.soha_time ~ '^[0-9.]+$'
+                AND CAST(se.soha_time AS FLOAT) > 0
+                AND se.kohan_3f IS NOT NULL
+                AND se.kohan_3f != ''
+                AND se.kohan_3f ~ '^[0-9.]+$'
+                AND CAST(se.kohan_3f AS FLOAT) > 0
                 AND se.kakutei_chakujun IS NOT NULL
                 AND se.kakutei_chakujun != ''
                 AND se.kakutei_chakujun ~ '^[0-9]+$'
@@ -99,10 +105,10 @@ def calculate_base_times_from_real_data():
             kohan_3f_list = []
             
             for row in rows:
-                soha_time = float(row[0])
-                kohan_3f = float(row[1])
-                corner_1 = int(row[2]) if row[2] and str(row[2]).isdigit() else 0
-                corner_2 = int(row[3]) if row[3] and str(row[3]).isdigit() else 0
+                soha_time = float(row[0]) if row[0] else 0
+                kohan_3f = float(row[1]) if row[1] else 0
+                corner_1 = int(row[2]) if row[2] else 0
+                corner_2 = int(row[3]) if row[3] else 0
                 tosu = int(row[4]) if row[4] else 12
                 
                 # 前半3Fを推定
