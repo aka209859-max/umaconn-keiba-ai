@@ -117,7 +117,6 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         ra.kyori,
         ra.track_code,
         ra.babajotai_code_dirt as baba_code,
-        ra.tosu,
         se.umaban,
         se.kakutei_chakujun,
         se.corner_1,
