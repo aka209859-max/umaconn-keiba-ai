@@ -69,7 +69,7 @@ def update_base_times():
     
     # 新しいconfig/base_times.pyを作成
     new_content = f'''"""
-地方競馬全14競馬場の基準タイム設定（実データ版 - v11）
+地方競馬全14競馬場の基準タイム設定（実データ版 - v14）
 
 ✅ 競馬場コード修正完了（公式発表の正しいコード）
 ✅ 実データから算出（{result_files[0].replace('base_times_result_', '').replace('.txt', '')}）
@@ -77,13 +77,14 @@ def update_base_times():
   - 大井（'44'）: 2023-10-01 以降（オーストラリア産白砂への全面置換）
   - 名古屋（'48'）: 2022-04-01 以降（大幅改修実施）
 ✅ soha_time（実測走破タイム）追加
+✅ 1200m厳密計算（median_zenhan_3f = median_soha_time - median_kohan_3f）
 
 データ構造:
 {{
   'keibajo_code': {{
     kyori: {{
       'soha_time': float,      # 実測走破タイム（秒）
-      'zenhan_3f': float,      # 前半3F（1200m=確定値, それ以外=AI推定ペース）
+      'zenhan_3f': float,      # 前半3F（1200m=厳密計算, それ以外=AI推定ペース）
       'kohan_3f': float,       # 後半3F（実測値）
       'race_count': int        # サンプル数
     }}
@@ -91,13 +92,13 @@ def update_base_times():
 }}
 
 注意事項:
-- 1200m: zenhan_3f = soha_time - kohan_3f（確定値）
+- 1200m: zenhan_3f = soha_time - kohan_3f（厳密計算、強制一致）
 - それ以外: zenhan_3fはTen3FEstimatorによる「ペース指標」
 - Ten指数計算では soha_time を基準タイムとして使用
 
 作成日: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 データソース: nvd_ra, nvd_se (PostgreSQL)
-計算方法: Ten3FEstimator（AI推定） + 1200m確定値
+計算方法: Ten3FEstimator（AI推定） + 1200m厳密計算（v14）
 """
 
 from typing import Dict, Tuple, Optional
@@ -105,7 +106,61 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# ============================
+# 1. 主催者マスター
+# ============================
+
+# 地方競馬全14主催者（NARコード付き）
+ORGANIZERS = {{
+    # 南関東4場（MINAMI_KANTO）
+    '42': {{'name': '浦和', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'}},
+    '43': {{'name': '船橋', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'}},
+    '44': {{'name': '大井', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'}},
+    '45': {{'name': '川崎', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'}},
+    
+    # 北海道・東北
+    '30': {{'name': '門別', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    '35': {{'name': '盛岡', 'region': 'TOHOKU', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    '36': {{'name': '水沢', 'region': 'TOHOKU', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    
+    # 北陸・東海
+    '46': {{'name': '金沢', 'region': 'HOKURIKU', 'base_class': 'C', 'calc_type': 'POINT'}},
+    '47': {{'name': '笠松', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    '48': {{'name': '名古屋', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    
+    # 近畿
+    '50': {{'name': '園田', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'}},
+    '51': {{'name': '姫路', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'}},
+    
+    # 四国・九州
+    '54': {{'name': '高知', 'region': 'SHIKOKU', 'base_class': 'C', 'calc_type': 'CYCLE'}},
+    '55': {{'name': '佐賀', 'region': 'KYUSHU', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+    
+    # ばんえい（特殊）
+    '65': {{'name': 'ばんえい', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'}},
+}}
+
+# ============================
+# 2. 基準タイム設定
+# ============================
+
 {base_times_content}
+
+# ============================
+# 3. 馬場状態補正値
+# ============================
+
+# 馬場状態補正（babajotai_code_dirt）
+BABA_CORRECTION = {{
+    '1': 0.0,   # 良
+    '2': 0.3,   # 稍重（+0.3秒）
+    '3': 0.6,   # 重（+0.6秒）
+    '4': 1.0,   # 不良（+1.0秒）
+}}
+
+# ============================
+# 4. ヘルパー関数
+# ============================
 
 # 競馬場名マッピング
 KEIBAJO_NAMES = {{
