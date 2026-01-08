@@ -190,6 +190,7 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     WHERE ra.keibajo_code = %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
+        AND CAST(ra.kyori AS INTEGER) >= 1400
         AND se.kakutei_chakujun IS NOT NULL
         AND se.kakutei_chakujun != ''
         AND se.kakutei_chakujun ~ '^[0-9]+$'
