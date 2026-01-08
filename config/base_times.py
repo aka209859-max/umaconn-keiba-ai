@@ -42,7 +42,7 @@ ORGANIZERS = {
     
     # 四国・九州
     '50': {'name': '高知', 'region': 'SHIKOKU', 'base_class': 'C', 'calc_type': 'CYCLE'},
-    '54': {'name': '佐賀', 'region': 'KYUSHU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '51': {'name': '佐賀', 'region': 'KYUSHU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
     
     # ばんえい（特殊）
     '65': {'name': 'ばんえい', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'},
@@ -201,7 +201,7 @@ BASE_TIMES = {
         1900: {'zenhan_3f': 37.8, 'kohan_3f': 40.3},
         2400: {'zenhan_3f': 38.5, 'kohan_3f': 41.0},
     },
-    '54': {  # 佐賀
+    '51': {  # 佐賀
         900:  {'zenhan_3f': 34.5, 'kohan_3f': 37.0},
         1300: {'zenhan_3f': 35.8, 'kohan_3f': 38.3},
         1400: {'zenhan_3f': 36.0, 'kohan_3f': 38.5},
