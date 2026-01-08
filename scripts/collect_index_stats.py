@@ -104,7 +104,7 @@ def get_period_for_track(keibajo_code: str) -> Tuple[str, str, str]:
 
 def parse_fukusho_odds(odds_fukusho_str: str, umaban: str) -> float:
     """
-    nvd_od.odds_fukusho から指定馬番の複勝オッズを取得
+    nvd_o1.odds_fukusho から指定馬番の複勝オッズを取得
     
     フォーマット: 固定長 336文字
     各馬番のオッズは16文字ブロック:
@@ -174,7 +174,7 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         ra.kaisai_tsukihi = se.kaisai_tsukihi AND
         ra.keibajo_code = se.keibajo_code AND
         ra.race_bango = se.race_bango
-    LEFT JOIN nvd_od od ON
+    LEFT JOIN nvd_o1 od ON
         ra.kaisai_nen = od.kaisai_nen AND
         ra.kaisai_tsukihi = od.kaisai_tsukihi AND
         ra.keibajo_code = od.keibajo_code AND
@@ -200,7 +200,7 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     for row in cursor.fetchall():
         race_data = dict(zip(columns, row))
         
-        # nvd_od.odds_fukusho から馬番のオッズを抽出
+        # nvd_o1.odds_fukusho から馬番のオッズを抽出
         if 'odds_fukusho' in race_data and race_data['odds_fukusho']:
             fukusho_odds = parse_fukusho_odds(
                 race_data['odds_fukusho'], 
@@ -350,6 +350,8 @@ def calculate_adjusted_return(hit_count: int, total_count: int, total_odds: floa
     補正回収率を計算
     
     補正回収率 = (的中率 × 平均オッズ) / 期待的中率 × 100
+    
+    DECIMAL(6,2) の範囲内に制限: -9999.99 〜 9999.99
     """
     if total_count == 0:
         return 0.0
@@ -357,13 +359,16 @@ def calculate_adjusted_return(hit_count: int, total_count: int, total_odds: floa
     hit_rate = hit_count / total_count
     avg_odds = total_odds / total_count
     
-    # 期待的中率 = 1 / 平均オッズ
+    # 期待的中率 = 1.0 / avg_odds
     expected_hit_rate = 1.0 / avg_odds if avg_odds > 0 else 0
     
     if expected_hit_rate > 0:
         adjusted_return = (hit_rate * avg_odds) / expected_hit_rate * 100
     else:
         adjusted_return = 0.0
+    
+    # DECIMAL(6,2) の範囲内に制限（-9999.99 〜 9999.99）
+    adjusted_return = max(-9999.99, min(9999.99, adjusted_return))
     
     return round(adjusted_return, 2)
 
@@ -463,7 +468,7 @@ def main():
             try:
                 indexes = calculate_indexes_for_horse(race)
                 result = safe_int(race.get('kakutei_chakujun'), 99)
-                odds_win = safe_float(race.get('tanso_odds'), 0.0)
+                odds_win = safe_float(race.get('tansho_odds'), 0.0)
                 odds_place = safe_float(race.get('fukusho_odds'), 0.0)
                 
                 for index_type, index_value in indexes.items():
