@@ -34,12 +34,12 @@ def check_corner_data_missing():
     SELECT 
         keibajo_code,
         COUNT(*) as total_records,
-        COUNT(CASE WHEN corner1 IS NULL OR corner1 = '' THEN 1 END) as corner1_missing,
-        COUNT(CASE WHEN corner2 IS NULL OR corner2 = '' THEN 1 END) as corner2_missing,
-        ROUND(100.0 * COUNT(CASE WHEN corner1 IS NULL OR corner1 = '' THEN 1 END) / COUNT(*), 2) as corner1_missing_pct,
-        ROUND(100.0 * COUNT(CASE WHEN corner2 IS NULL OR corner2 = '' THEN 1 END) / COUNT(*), 2) as corner2_missing_pct
+        COUNT(CASE WHEN corner_tsuka_juni_1 IS NULL OR corner_tsuka_juni_1 = '' OR corner_tsuka_juni_1 = '00' THEN 1 END) as corner1_missing,
+        COUNT(CASE WHEN corner_tsuka_juni_2 IS NULL OR corner_tsuka_juni_2 = '' OR corner_tsuka_juni_2 = '00' THEN 1 END) as corner2_missing,
+        ROUND(100.0 * COUNT(CASE WHEN corner_tsuka_juni_1 IS NULL OR corner_tsuka_juni_1 = '' OR corner_tsuka_juni_1 = '00' THEN 1 END) / COUNT(*), 2) as corner1_missing_pct,
+        ROUND(100.0 * COUNT(CASE WHEN corner_tsuka_juni_2 IS NULL OR corner_tsuka_juni_2 = '' OR corner_tsuka_juni_2 = '00' THEN 1 END) / COUNT(*), 2) as corner2_missing_pct
     FROM nvd_ra
-    WHERE baba_jotai = '1'  -- 馬場良のみ
+    WHERE babajotai_code_dirt = '1'  -- 馬場良のみ
     GROUP BY keibajo_code
     ORDER BY keibajo_code;
     """
