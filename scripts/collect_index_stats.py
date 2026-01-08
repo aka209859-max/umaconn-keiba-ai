@@ -130,13 +130,13 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         se.fukusho_odds
     FROM nvd_ra ra
     JOIN nvd_se se ON 
-        ra.kaisai_yen = se.kaisai_yen AND
+        ra.kaisai_nen = se.kaisai_nen AND
         ra.kaisai_tsukihi = se.kaisai_tsukihi AND
         ra.keibajo_code = se.keibajo_code AND
         ra.race_bango = se.race_bango
     WHERE ra.keibajo_code = %s
-        AND ra.kaisai_yen || ra.kaisai_tsukihi >= %s
-        AND ra.kaisai_yen || ra.kaisai_tsukihi <= %s
+        AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
+        AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
         AND se.kakutei_chakujun IS NOT NULL
         AND se.kakutei_chakujun != ''
         AND se.kakutei_chakujun ~ '^[0-9]+$'
@@ -146,7 +146,7 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     if keibajo_code == '54':
         query += " AND ra.race_bango != '12'"
     
-    query += " ORDER BY ra.kaisai_yen, ra.kaisai_tsukihi, ra.race_bango"
+    query += " ORDER BY ra.kaisai_nen, ra.kaisai_tsukihi, ra.race_bango"
     
     cursor.execute(query, (keibajo_code, start_date, end_date))
     
