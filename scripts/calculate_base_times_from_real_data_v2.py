@@ -73,7 +73,7 @@ def calculate_base_times_from_real_data():
             JOIN nvd_se se ON 
                 ra.kaisai_nen = se.kaisai_nen AND
                 ra.keibajo_code = se.keibajo_code AND
-                ra.kaisai_nengappi = se.kaisai_nengappi AND
+                ra.kaisai_tsukihi = se.kaisai_tsukihi AND
                 ra.race_bango = se.race_bango
             WHERE ra.keibajo_code = %s
                 AND ra.kyori = %s
