@@ -125,13 +125,24 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         se.corner_4,
         se.kohan_3f,
         se.soha_time,
-        se.tansho_odds
+        se.tansho_odds,
+        CASE 
+            WHEN hr.haraimodoshi_fukusho_1b IS NOT NULL 
+            THEN hr.haraimodoshi_fukusho_1b / 100.0 
+            ELSE 0 
+        END as fukusho_odds
     FROM nvd_ra ra
     JOIN nvd_se se ON 
         ra.kaisai_nen = se.kaisai_nen AND
         ra.kaisai_tsukihi = se.kaisai_tsukihi AND
         ra.keibajo_code = se.keibajo_code AND
         ra.race_bango = se.race_bango
+    LEFT JOIN nvd_hr hr ON
+        ra.kaisai_nen = hr.kaisai_nen AND
+        ra.kaisai_tsukihi = hr.kaisai_tsukihi AND
+        ra.keibajo_code = hr.keibajo_code AND
+        ra.race_bango = hr.race_bango AND
+        se.umaban = hr.umaban
     WHERE ra.keibajo_code = %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
         AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
