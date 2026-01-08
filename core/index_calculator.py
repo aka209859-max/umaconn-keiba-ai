@@ -22,7 +22,26 @@ import logging
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.base_times import BASE_TIMES, BABA_CORRECTION, ORGANIZERS, get_base_time as config_get_base_time
 
+# Ten3F推定エンジンをインポート
+from core.ten_3f_estimator import Ten3FEstimator
+
 logger = logging.getLogger(__name__)
+
+# Ten3F推定エンジンの初期化（グローバル変数）
+_ten_3f_estimator = None
+
+def get_ten_3f_estimator():
+    """Ten3F推定エンジンのシングルトン取得"""
+    global _ten_3f_estimator
+    if _ten_3f_estimator is None:
+        _ten_3f_estimator = Ten3FEstimator()
+        try:
+            model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'ten_3f_lgbm_model.pkl')
+            _ten_3f_estimator.load_model(model_path)
+            logger.info(f"✅ Ten3F推定モデル読み込み成功: {model_path}")
+        except Exception as e:
+            logger.warning(f"⚠️ Ten3F推定モデル読み込み失敗（ベースライン推定のみ使用）: {e}")
+    return _ten_3f_estimator
 
 
 # ============================
@@ -628,6 +647,7 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         horse_data: 馬データ
             必須キー: zenhan_3f, kohan_3f, corner_1-4, kyori, 
                      babajotai_code_dirt, keibajo_code, tosu
+            ※ zenhan_3f が欠損している場合、Ten3FEstimator で推定値を使用
     
     Returns:
         指数データ
@@ -636,12 +656,14 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
                 'position_index': float,
                 'agari_index': float,
                 'pace_index': float,
-                'ashishitsu': str
+                'ashishitsu': str,
+                'estimated_ten_3f': float (推定値を使用した場合のみ),
+                'ten_3f_method': str (推定方法: 'actual' | 'baseline' | 'ml')
             }
     """
     try:
         # データ取得
-        zenhan_3f = safe_float(horse_data.get('zenhan_3f'))
+        zenhan_3f_raw = safe_float(horse_data.get('zenhan_3f'))
         kohan_3f = safe_float(horse_data.get('kohan_3f'))
         corner_1 = safe_int(horse_data.get('corner_1'))
         corner_2 = safe_int(horse_data.get('corner_2'))
@@ -655,6 +677,29 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         wakuban = safe_int(horse_data.get('wakuban'), 0)
         kinryo = safe_float(horse_data.get('kinryo'), 54.0)
         bataiju = safe_float(horse_data.get('bataiju'), 460.0)
+        time_seconds = safe_float(horse_data.get('soha_time'))
+        
+        # ✅ Phase 2統合: zenhan_3f が欠損している場合、Ten3FEstimator で推定
+        zenhan_3f = zenhan_3f_raw
+        estimated_ten_3f = None
+        ten_3f_method = 'actual'
+        
+        if zenhan_3f_raw is None or zenhan_3f_raw == 0.0:
+            logger.info(f"⚠️ zenhan_3f が欠損しています。Ten3FEstimator で推定します（kyori={kyori}m）")
+            estimator = get_ten_3f_estimator()
+            result = estimator.estimate(
+                time_seconds=time_seconds,
+                kohan_3f_seconds=kohan_3f,
+                kyori=kyori,
+                corner_1=corner_1 if corner_1 > 0 else None,
+                corner_2=corner_2 if corner_2 > 0 else None,
+                field_size=tosu,
+                use_ml=True
+            )
+            zenhan_3f = result['ten_3f_final']
+            estimated_ten_3f = zenhan_3f
+            ten_3f_method = result['method']
+            logger.info(f"✅ Ten3F推定完了: {zenhan_3f:.2f}秒 (method={ten_3f_method})")
         
         # 各指数を計算
         ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu, kinryo, bataiju)
@@ -666,7 +711,7 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         past_corners = horse_data.get('past_corners', [])
         ashishitsu = predict_ashishitsu(past_corners, wakuban=wakuban, tosu=tosu, kyori=kyori)
         
-        return {
+        result = {
             'ten_index': ten_index,
             'position_index': position_index,
             'agari_index': agari_index,
@@ -674,6 +719,13 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
             'pace_type': pace_type,
             'ashishitsu': ashishitsu
         }
+        
+        # 推定値を使用した場合のみ、推定情報を追加
+        if estimated_ten_3f is not None:
+            result['estimated_ten_3f'] = estimated_ten_3f
+            result['ten_3f_method'] = ten_3f_method
+        
+        return result
     
     except Exception as e:
         logger.error(f"指数計算エラー: {e}")

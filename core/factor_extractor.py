@@ -90,6 +90,25 @@ def calculate_kyuyo_weeks(prev_race_date, current_race_date):
         return 0
 
 
+def calculate_pace_change_rate(zenhan_3f, kohan_3f):
+    """
+    ペース変化率を計算
+    
+    Args:
+        zenhan_3f: float - 前半3Fタイム（秒）
+        kohan_3f: float - 後半3Fタイム（秒）
+    
+    Returns:
+        float: ペース変化率（正値は失速、負値は加速）
+    """
+    try:
+        if not zenhan_3f or not kohan_3f or zenhan_3f == 0:
+            return None
+        return (kohan_3f - zenhan_3f) / zenhan_3f
+    except Exception:
+        return None
+
+
 def get_previous_race_data(conn, ketto_toroku_bango, current_race_date):
     """
     前走データを取得
@@ -267,7 +286,11 @@ def extract_single_factors(conn, horse_data, race_data):
         'B17_ff_blood_no': horse_data.get('ff_blood_no', None),
         'B18_fm_blood_no': horse_data.get('fm_blood_no', None),
         'B19_mf_blood_no': horse_data.get('mf_blood_no', None),
-        'B20_mm_blood_no': horse_data.get('mm_blood_no', None)
+        'B20_mm_blood_no': horse_data.get('mm_blood_no', None),
+        
+        # Phase 2 新規ファクター（2026-01-08 追加）
+        'F34_estimated_ten_3f': horse_data.get('estimated_ten_3f', None),  # Ten3FEstimatorで推定
+        'F35_pace_change_rate': horse_data.get('pace_change_rate', None)  # ペース変化率
     }
     
     return factors

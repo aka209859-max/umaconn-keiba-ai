@@ -240,6 +240,23 @@ SINGLE_FACTORS = [
         'table': 'nvd_se',
         'column': 'prev_wakuban',  # 前走データから取得
         'display_column': 'prev_wakuban'
+    },
+    # Phase 2 新規ファクター（2026-01-08 追加）
+    {
+        'id': 'F34',
+        'name': '推定前半3F',
+        'table': 'computed',
+        'column': 'estimated_ten_3f',  # Ten3FEstimatorで計算
+        'display_column': 'estimated_ten_3f',
+        'note': 'Ten3FEstimator（Layer 1-3）で推定した前半3Fタイム（秒）'
+    },
+    {
+        'id': 'F35',
+        'name': 'ペース変化率',
+        'table': 'computed',
+        'column': 'pace_change_rate',  # (kohan_3f - zenhan_3f) / zenhan_3f で計算
+        'display_column': 'pace_change_rate',
+        'note': 'ペース変化率 = (後半3F - 前半3F) / 前半3F（正値は失速、負値は加速）'
     }
 ]
 
