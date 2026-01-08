@@ -21,6 +21,14 @@ import os
 from datetime import datetime
 from collections import defaultdict
 from typing import Dict, List, Tuple
+import logging
+
+# ロギング設定
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -430,11 +438,33 @@ def save_stats_to_db(conn, keibajo_code: str, stats: Dict):
                 safe_total_place_odds, safe_adj_place_ret
             ))
         except Exception as e:
-            logger.error(f"データ挿入エラー: {keibajo_code}, {index_type}, {index_value}")
-            logger.error(f"  cnt_win={data['cnt_win']}, hit_win={data['hit_win']}, rate_win_hit={safe_rate_win_hit}")
-            logger.error(f"  total_win_odds={safe_total_win_odds}, adj_win_ret={safe_adj_win_ret}")
-            logger.error(f"  cnt_place={data['cnt_place']}, hit_place={data['hit_place']}, rate_place_hit={safe_rate_place_hit}")
-            logger.error(f"  total_place_odds={safe_total_place_odds}, adj_place_ret={safe_adj_place_ret}")
+            error_msg = f"""
+================================================================================
+❌ データ挿入エラー
+================================================================================
+競馬場: {keibajo_code}
+指数タイプ: {index_type}
+指数値: {index_value}
+
+単勝データ:
+  cnt_win={data['cnt_win']}, hit_win={data['hit_win']}, rate_win_hit={safe_rate_win_hit}
+  total_win_odds={safe_total_win_odds}, adj_win_ret={safe_adj_win_ret}
+
+複勝データ:
+  cnt_place={data['cnt_place']}, hit_place={data['hit_place']}, rate_place_hit={safe_rate_place_hit}
+  total_place_odds={safe_total_place_odds}, adj_place_ret={safe_adj_place_ret}
+
+元データ:
+  rate_win_hit(元)={rate_win_hit}
+  rate_place_hit(元)={rate_place_hit}
+  adj_win_ret(元)={adj_win_ret}
+  adj_place_ret(元)={adj_place_ret}
+
+エラー: {str(e)}
+================================================================================
+"""
+            print(error_msg)
+            logger.error(error_msg)
             raise
     
     conn.commit()
