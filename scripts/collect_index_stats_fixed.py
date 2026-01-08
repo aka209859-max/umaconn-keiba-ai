@@ -419,9 +419,14 @@ def save_stats_to_db(conn, keibajo_code: str, stats: Dict):
             data['hit_place'], data['cnt_place'], data['total_place_odds']
         )
         
+        # 平均オッズを計算（累積値を件数で割る）
+        avg_win_odds = (data['total_win_odds'] / data['cnt_win']) if data['cnt_win'] > 0 else 0.0
+        avg_place_odds = (data['total_place_odds'] / data['cnt_place']) if data['cnt_place'] > 0 else 0.0
+        
         # DECIMAL(10,2) の範囲内に制限（最大 99,999,999.99）
-        safe_total_win_odds = min(99999999.99, round(data['total_win_odds'], 2))
-        safe_total_place_odds = min(99999999.99, round(data['total_place_odds'], 2))
+        # 平均オッズなので通常は数百以下だが、念のため制限
+        safe_total_win_odds = max(0.0, min(99999999.99, round(avg_win_odds, 2)))
+        safe_total_place_odds = max(0.0, min(99999999.99, round(avg_place_odds, 2)))
         
         # すべての数値を安全な範囲に制限
         safe_rate_win_hit = max(-99999999.99, min(99999999.99, round(rate_win_hit, 2)))
@@ -446,10 +451,12 @@ def save_stats_to_db(conn, keibajo_code: str, stats: Dict):
             print(f"指数値: {index_value}")
             print(f"\n単勝データ:")
             print(f"  cnt_win={data['cnt_win']}, hit_win={data['hit_win']}, rate_win_hit={safe_rate_win_hit}")
-            print(f"  total_win_odds={safe_total_win_odds}, adj_win_ret={safe_adj_win_ret}")
+            print(f"  total_win_odds(累積)={data['total_win_odds']}, avg_win_odds(平均)={avg_win_odds:.2f}")
+            print(f"  safe_total_win_odds={safe_total_win_odds}, adj_win_ret={safe_adj_win_ret}")
             print(f"\n複勝データ:")
             print(f"  cnt_place={data['cnt_place']}, hit_place={data['hit_place']}, rate_place_hit={safe_rate_place_hit}")
-            print(f"  total_place_odds={safe_total_place_odds}, adj_place_ret={safe_adj_place_ret}")
+            print(f"  total_place_odds(累積)={data['total_place_odds']}, avg_place_odds(平均)={avg_place_odds:.2f}")
+            print(f"  safe_total_place_odds={safe_total_place_odds}, adj_place_ret={safe_adj_place_ret}")
             print(f"\n元データ:")
             print(f"  rate_win_hit(元)={rate_win_hit}")
             print(f"  rate_place_hit(元)={rate_place_hit}")
