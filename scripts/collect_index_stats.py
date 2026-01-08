@@ -411,12 +411,16 @@ def save_stats_to_db(conn, keibajo_code: str, stats: Dict):
             data['hit_place'], data['cnt_place'], data['total_place_odds']
         )
         
+        # DECIMAL(10,2) の範囲内に制限（最大 99,999,999.99）
+        safe_total_win_odds = min(99999999.99, round(data['total_win_odds'], 2))
+        safe_total_place_odds = min(99999999.99, round(data['total_place_odds'], 2))
+        
         cursor.execute(insert_query, (
             keibajo_code, index_type, str(index_value),
             data['cnt_win'], data['hit_win'], round(rate_win_hit, 2), 
-            round(data['total_win_odds'], 2), adj_win_ret,
+            safe_total_win_odds, adj_win_ret,
             data['cnt_place'], data['hit_place'], round(rate_place_hit, 2),
-            round(data['total_place_odds'], 2), adj_place_ret
+            safe_total_place_odds, adj_place_ret
         ))
     
     conn.commit()
