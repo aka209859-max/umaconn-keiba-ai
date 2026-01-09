@@ -1,94 +1,89 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
-soha_time のフォーマットを検証するスクリプト
+soha_time と kohan_3f の実データ検証スクリプト
 """
-
 import sys
-sys.path.append('E:\\UmaData\\nar-analytics-python-v2')
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config.db_config import get_db_connection
 
-def verify_soha_time_format():
-    """soha_timeのフォーマットを検証"""
-    
-    print("=" * 80)
-    print("soha_time フォーマット検証")
-    print("=" * 80)
+def verify_data():
+    print("\n" + "="*60)
+    print("soha_time と kohan_3f の実データ検証")
+    print("="*60)
     
     conn = get_db_connection()
     cur = conn.cursor()
     
-    # 大井（'44'）の1200mデータを取得
-    cur.execute("""
+    query = """
     SELECT 
+        ra.kyori,
         se.soha_time,
         se.kohan_3f,
         se.kakutei_chakujun,
-        ra.kaisai_nen,
-        ra.kaisai_tsukihi
+        se.bamei
     FROM nvd_ra ra
     JOIN nvd_se se ON 
         ra.kaisai_nen = se.kaisai_nen AND
-        ra.keibajo_code = se.keibajo_code AND
         ra.kaisai_tsukihi = se.kaisai_tsukihi AND
+        ra.keibajo_code = se.keibajo_code AND
         ra.race_bango = se.race_bango
-    WHERE ra.keibajo_code = '44'
-        AND CAST(ra.kyori AS INTEGER) = 1200
-        AND (ra.babajotai_code_dirt = '1' OR ra.babajotai_code_shiba = '1')
-        AND se.soha_time IS NOT NULL
-        AND se.soha_time != ''
-        AND se.soha_time ~ '^[0-9.]+$'
-        AND se.kohan_3f IS NOT NULL
-        AND se.kohan_3f != ''
-        AND se.kohan_3f ~ '^[0-9.]+$'
-        AND se.kakutei_chakujun IS NOT NULL
-        AND se.kakutei_chakujun != ''
-        AND se.kakutei_chakujun ~ '^[0-9]+$'
-        AND CAST(se.kakutei_chakujun AS INTEGER) BETWEEN 1 AND 5
-    LIMIT 20
-    """)
+    WHERE ra.keibajo_code = '30'  -- 門別
+      AND ra.kaisai_nen || ra.kaisai_tsukihi >= '20241001'
+      AND ra.kaisai_nen || ra.kaisai_tsukihi <= '20241231'
+      AND CAST(ra.kyori AS INTEGER) = 1000
+      AND se.kakutei_chakujun = '1'
+      AND se.soha_time IS NOT NULL
+      AND se.kohan_3f IS NOT NULL
+    LIMIT 5
+    """
     
+    cur.execute(query)
     rows = cur.fetchall()
     
-    print("\n大井（'44'）1200m サンプルデータ（20件）")
-    print("-" * 80)
-    print(f"{'No':<4} {'soha_time':<10} {'kohan_3f':<10} {'着順':<4} {'前半3F(パターン1)':<20} {'前半3F(パターン2)':<20} {'開催年月日'}")
-    print("-" * 80)
+    print("\n【門別 1000m の勝ち馬データサンプル】")
+    print(f"{'距離':<8} {'soha_time':<12} {'kohan_3f':<12} {'着順':<8} {'馬名':<20}")
+    print("-" * 70)
     
-    for i, row in enumerate(rows, 1):
-        soha_time_raw = row[0]
-        kohan_3f_raw = row[1]
-        chakujun = row[2]
-        kaisai_nen = row[3]
-        kaisai_tsukihi = row[4]
+    for row in rows:
+        kyori, soha_time, kohan_3f, chakujun, bamei = row
+        print(f"{kyori:<8} {soha_time:<12} {kohan_3f:<12} {chakujun:<8} {bamei:<20}")
+    
+    # 変換テスト
+    print("\n" + "="*60)
+    print("変換テスト")
+    print("="*60)
+    
+    if rows:
+        row = rows[0]
+        soha_time_str = str(row[1])
+        kohan_3f_str = str(row[2])
         
-        # パターン1: soha_time は0.1秒単位（1134 → 113.4秒）
-        soha_time_p1 = float(soha_time_raw) / 10.0
-        kohan_3f_p1 = float(kohan_3f_raw) / 10.0
-        zenhan_3f_p1 = soha_time_p1 - kohan_3f_p1
+        print(f"\n元データ: soha_time={soha_time_str}, kohan_3f={kohan_3f_str}")
         
-        # パターン2: soha_time は「分+0.1秒」形式（1134 → 1分13.4秒 = 73.4秒）
-        soha_time_int = int(float(soha_time_raw))
-        minutes = soha_time_int // 1000
-        remainder = soha_time_int % 1000
-        soha_time_p2 = minutes * 60 + remainder / 10.0
-        kohan_3f_p2 = float(kohan_3f_raw) / 10.0
-        zenhan_3f_p2 = soha_time_p2 - kohan_3f_p2
+        # パターン1: 現在の変換式（mSSd）
+        soha_padded = soha_time_str.zfill(4)
+        minutes = int(soha_padded[0:1])
+        seconds = int(soha_padded[1:3])
+        deciseconds = int(soha_padded[3:4])
+        soha_seconds = minutes * 60 + seconds + deciseconds / 10.0
+        kohan_seconds = float(kohan_3f_str) / 10.0
+        zenhan_3f_pattern1 = soha_seconds - kohan_seconds
         
-        print(f"{i:<4} {soha_time_raw:<10} {kohan_3f_raw:<10} {chakujun:<4} {zenhan_3f_p1:.1f}秒 ({soha_time_p1:.1f}-{kohan_3f_p1:.1f})<10 {zenhan_3f_p2:.1f}秒 ({soha_time_p2:.1f}-{kohan_3f_p2:.1f})<10 {kaisai_nen}-{kaisai_tsukihi}")
+        print(f"\nパターン1（現在）: soha_time={soha_seconds:.1f}秒, kohan_3f={kohan_seconds:.1f}秒, zenhan_3f={zenhan_3f_pattern1:.1f}秒")
+        
+        # パターン2: soha_time が MMSSd 形式の場合（1355 = 13分55秒）
+        if len(soha_time_str) >= 4:
+            minutes2 = int(soha_time_str[0:2])
+            seconds2 = int(soha_time_str[2:4]) if len(soha_time_str) >= 4 else 0
+            deciseconds2 = int(soha_time_str[4:5]) if len(soha_time_str) >= 5 else 0
+            soha_seconds2 = minutes2 * 60 + seconds2 + deciseconds2 / 10.0
+            zenhan_3f_pattern2 = soha_seconds2 - kohan_seconds
+            
+            print(f"パターン2（MMSSd）: soha_time={soha_seconds2:.1f}秒, kohan_3f={kohan_seconds:.1f}秒, zenhan_3f={zenhan_3f_pattern2:.1f}秒")
     
     cur.close()
     conn.close()
-    
-    print("\n" + "=" * 80)
-    print("判定基準:")
-    print("- 1200mの前半3Fは通常 35-38秒程度")
-    print("- 後半3Fは通常 37-40秒程度")
-    print("- 走破タイムは通常 73-78秒程度")
-    print("\n✅ パターン1（0.1秒単位）で前半3Fが35-38秒なら → パターン1が正解")
-    print("✅ パターン2（分+0.1秒形式）で前半3Fが35-38秒なら → パターン2が正解")
-    print("=" * 80)
 
-if __name__ == "__main__":
-    verify_soha_time_format()
+if __name__ == '__main__':
+    verify_data()
