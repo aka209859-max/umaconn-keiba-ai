@@ -138,25 +138,27 @@ def recalculate_base_times():
             kohan_3f_str = str(row[2])
             
             try:
-                # soha_time: 1149 → 1分14.9秒 = 74.9秒
-                if len(soha_time_str) >= 3:
-                    minutes = int(soha_time_str[:-2])
-                    seconds_tenths = int(soha_time_str[-2:])
-                    soha_time_sec = minutes * 60 + seconds_tenths / 10.0
-                else:
-                    soha_time_sec = int(soha_time_str) / 10.0
+                # soha_time の変換（mSSd形式）
+                # 重要: 3桁の場合（598など）に対応するため、左を0埋めして4桁にする
+                soha_padded = soha_time_str.zfill(4)
                 
-                # kohan_3f: 387 → 38.7秒
-                kohan_3f_sec = float(kohan_3f_str) / 10.0
+                minutes = int(soha_padded[0:1])       # 1桁目: 分
+                seconds = int(soha_padded[1:3])       # 2-3桁目: 秒
+                deciseconds = int(soha_padded[3:4])   # 4桁目: 0.1秒
                 
-                # zenhan_3f（前半3F）= 走破タイム - 後半3F
-                zenhan_3f = soha_time_sec - kohan_3f_sec
+                soha_seconds = (minutes * 60) + seconds + (deciseconds / 10.0)
+                
+                # kohan_3f の変換（SSS形式）
+                kohan_seconds = float(kohan_3f_str) / 10.0
+                
+                # zenhan_3f の算出
+                zenhan_3f = soha_seconds - kohan_seconds
                 
                 # データ検証: kohan_3fは30-50秒、zenhan_3fは正の値であればOK
-                if zenhan_3f > 0 and 30.0 <= kohan_3f_sec <= 50.0:
+                if zenhan_3f > 0 and 30.0 <= kohan_seconds <= 50.0:
                     distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
-                    distance_data[kyori]['kohan_3f'].append(kohan_3f_sec)
-            except (ValueError, ZeroDivisionError):
+                    distance_data[kyori]['kohan_3f'].append(kohan_seconds)
+            except (ValueError, IndexError, ZeroDivisionError):
                 # 変換エラーは無視
                 continue
         
