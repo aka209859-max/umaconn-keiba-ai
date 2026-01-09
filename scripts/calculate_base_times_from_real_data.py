@@ -58,7 +58,7 @@ def calculate_base_times_from_real_data():
         ORDER BY kyori
         """, (keibajo_code,))
         
-        kyori_list = [row[0] for row in cur.fetchall()]
+        kyori_list = [int(row[0]) for row in cur.fetchall()]
         results[keibajo_code] = {}
         
         for kyori in kyori_list:
