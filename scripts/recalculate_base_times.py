@@ -14,12 +14,23 @@ import sys
 from pathlib import Path
 from collections import defaultdict
 import json
+import os
 
 # プロジェクトルートをパスに追加
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from config.db_config import get_db_connection
+
+# safe_int ヘルパー関数
+def safe_int(value, default: int = 0) -> int:
+    """安全なint変換"""
+    try:
+        if value is None or value == '' or value == '00':
+            return default
+        return int(value)
+    except (ValueError, TypeError):
+        return default
 
 # データ期間設定（競馬場コード修正後）
 DATE_RANGES = {
@@ -93,15 +104,19 @@ def recalculate_base_times():
         print('=' * 100)
         
         # 距離別のタイムデータを取得
-        # 重要な制約:
-        # - 1200m以下のみ対象（1201m以上は前半3Fの公式データが存在しない）
-        # - 1200m未満: zenhan_3f = 「前半3F（仮）」（走破タイム - 後半3F）
-        # - 1200m: zenhan_3f = 「前半3F」（実測値）
+        # zenhan_3fの算出方法:
+        # - 1200m未満: zenhan_3f = 走破タイム - 後半3F = 「前半3F（仮）」
+        # - 1200m: zenhan_3f = 走破タイム - 後半3F = 「前半3F（実測値）」
+        # - 1201m以上: zenhan_3f = 独自ロジックの予測値（ten_3f_estimator.pyで算出）
+        # 
+        # 重要: テン指数は全競馬場の全距離に適用されるため、全距離のデータを取得
         query = """
         SELECT 
             CAST(ra.kyori AS INTEGER) AS kyori,
             se.soha_time,
-            se.kohan_3f
+            se.kohan_3f,
+            se.corner_1,
+            se.corner_2
         FROM nvd_ra ra
         JOIN nvd_se se ON 
             ra.kaisai_nen = se.kaisai_nen AND
@@ -111,7 +126,6 @@ def recalculate_base_times():
         WHERE ra.keibajo_code = %s
           AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
           AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
-          AND CAST(ra.kyori AS INTEGER) <= 1200
           AND se.kakutei_chakujun IS NOT NULL
           AND se.kakutei_chakujun != ''
           AND se.kakutei_chakujun ~ '^[0-9]+$'
@@ -140,6 +154,8 @@ def recalculate_base_times():
             kyori = row[0]
             soha_time_str = str(row[1])
             kohan_3f_str = str(row[2])
+            corner_1 = safe_int(row[3]) if len(row) > 3 else None
+            corner_2 = safe_int(row[4]) if len(row) > 4 else None
             
             try:
                 # soha_time の変換（mSSd形式）
@@ -156,7 +172,22 @@ def recalculate_base_times():
                 kohan_seconds = float(kohan_3f_str) / 10.0
                 
                 # zenhan_3f の算出
-                zenhan_3f = soha_seconds - kohan_seconds
+                if kyori <= 1200:
+                    # 1200m以下: 走破タイム - 後半3F
+                    zenhan_3f = soha_seconds - kohan_seconds
+                else:
+                    # 1201m以上: ten_3f_estimator.py で推定
+                    from core.ten_3f_estimator import Ten3FEstimator
+                    estimator = Ten3FEstimator()
+                    result = estimator.estimate(
+                        time_seconds=soha_seconds,
+                        kohan_3f_seconds=kohan_seconds,
+                        kyori=kyori,
+                        corner_1=corner_1,
+                        corner_2=corner_2,
+                        use_ml=False  # MLモデルなしでベースライン推定のみ
+                    )
+                    zenhan_3f = result['ten_3f_final']
                 
                 # データ検証: kohan_3fは30-50秒、zenhan_3fは正の値であればOK
                 if zenhan_3f > 0 and 30.0 <= kohan_seconds <= 50.0:
