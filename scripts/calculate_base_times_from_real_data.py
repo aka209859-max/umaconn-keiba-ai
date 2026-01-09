@@ -80,7 +80,7 @@ def calculate_base_times_from_real_data():
                         ra.keibajo_code = se.keibajo_code AND
                         ra.race_bango = se.race_bango
                     WHERE ra.keibajo_code = %s
-                        AND ra.kyori = %s
+                        AND CAST(ra.kyori AS INTEGER) = %s
                         AND se.soha_time IS NOT NULL
                         AND se.soha_time != ''
                         AND se.soha_time ~ '^[0-9]+$'
@@ -117,7 +117,7 @@ def calculate_base_times_from_real_data():
                     ra.keibajo_code = se.keibajo_code AND
                     ra.race_bango = se.race_bango
                 WHERE ra.keibajo_code = %s
-                    AND ra.kyori = %s
+                    AND CAST(ra.kyori AS INTEGER) = %s
                     AND se.soha_time IS NOT NULL
                     AND se.soha_time != ''
                     AND se.soha_time ~ '^[0-9]+$'
