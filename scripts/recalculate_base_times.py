@@ -93,7 +93,10 @@ def recalculate_base_times():
         print('=' * 100)
         
         # 距離別のタイムデータを取得
-        # zenhan_3f（前半3F）を計算: soha_time（総破タイム） - kohan_3f（後半3F）
+        # 重要な制約:
+        # - 1200m以下のみ対象（1201m以上は前半3Fの公式データが存在しない）
+        # - 1200m未満: zenhan_3f = 「前半3F（仮）」（走破タイム - 後半3F）
+        # - 1200m: zenhan_3f = 「前半3F」（実測値）
         query = """
         SELECT 
             CAST(ra.kyori AS INTEGER) AS kyori,
@@ -108,6 +111,7 @@ def recalculate_base_times():
         WHERE ra.keibajo_code = %s
           AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
           AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
+          AND CAST(ra.kyori AS INTEGER) <= 1200
           AND se.kakutei_chakujun IS NOT NULL
           AND se.kakutei_chakujun != ''
           AND se.kakutei_chakujun ~ '^[0-9]+$'
