@@ -368,10 +368,10 @@ def calculate_ten_index(
     # 斤量補正
     kinryo_correction, kinryo_desc = get_kinryo_correction(kinryo, bataiju)
     
-    # テン指数計算（符号反転: プラスが良い形に修正）
-    # 修正: (base_time - zenhan_3f) の符号を反転
-    # 速い馬（zenhan_3f < base_time）がプラスになるように
-    ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction + kinryo_correction) * 10
+    # テン指数計算（プラスが良い形）
+    # 速い馬（zenhan_3f < base_time）がプラスになる
+    # 刻み幅: 1刻み（×10を削除）
+    ten_index = (base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction + kinryo_correction
     
     # 範囲制限
     ten_index = max(-100, min(100, ten_index))
@@ -498,8 +498,10 @@ def calculate_agari_index(
         pace_type, pace_judge_desc = judge_pace_type(zenhan_3f, kohan_3f, kyori, keibajo_code)
         pace_correction, pace_desc = get_pace_correction_for_agari(pace_type)
     
-    # 上がり指数計算
-    agari_index = ((base_time - kohan_3f) + baba_correction + furi_correction + kinryo_correction + pace_correction) * 10
+    # 上がり指数計算（プラスが良い形）
+    # 速い馬（kohan_3f < base_time）がプラスになる
+    # 刻み幅: 1刻み（×10を削除）
+    agari_index = (base_time - kohan_3f) + baba_correction + furi_correction + kinryo_correction + pace_correction
     
     # 範囲制限
     agari_index = max(-100, min(100, agari_index))
@@ -667,9 +669,9 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
             }
     """
     try:
-        # データ取得
-        zenhan_3f_raw = safe_float(horse_data.get('zenhan_3f'))
-        kohan_3f = safe_float(horse_data.get('kohan_3f'))
+        # データ取得（1/10秒単位から秒単位に変換）
+        zenhan_3f_raw = safe_float(horse_data.get('zenhan_3f')) / 10.0 if horse_data.get('zenhan_3f') else 0.0
+        kohan_3f = safe_float(horse_data.get('kohan_3f')) / 10.0 if horse_data.get('kohan_3f') else 0.0
         corner_1 = safe_int(horse_data.get('corner_1'))
         corner_2 = safe_int(horse_data.get('corner_2'))
         corner_3 = safe_int(horse_data.get('corner_3'))
@@ -682,7 +684,7 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         wakuban = safe_int(horse_data.get('wakuban'), 0)
         kinryo = safe_float(horse_data.get('kinryo'), 54.0)
         bataiju = safe_float(horse_data.get('bataiju'), 460.0)
-        time_seconds = safe_float(horse_data.get('soha_time'))
+        time_seconds = safe_float(horse_data.get('soha_time')) / 10.0 if horse_data.get('soha_time') else 0.0
         
         # ✅ Phase 2統合: zenhan_3f が欠損している場合、Ten3FEstimator で推定
         zenhan_3f = zenhan_3f_raw
