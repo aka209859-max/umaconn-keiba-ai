@@ -31,7 +31,7 @@ def calculate_base_times_from_real_data():
     計算方法:
     1. 各競馬場・距離で、クラス基準（C2またはC）のレースを抽出
     2. 前半3F・後半3Fの平均タイムを計算
-    3. 中央値（median）を採用して外れ値の影響を除外
+    3. 上位20%の平均値を基準タイム（優秀な馬の基準）として採用
     """
     conn = get_db_connection()
     cur = conn.cursor()
@@ -94,10 +94,15 @@ def calculate_base_times_from_real_data():
                         AND se.kakutei_chakujun ~ '^[0-9]+$'
                 )
                 SELECT 
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY zenhan_3f) as median_zenhan,
-                    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY kohan_3f) as median_kohan,
+                    AVG(zenhan_3f) as avg_zenhan,
+                    AVG(kohan_3f) as avg_kohan,
                     COUNT(*) as race_count
-                FROM valid_races
+                FROM (
+                    SELECT zenhan_3f, kohan_3f
+                    FROM valid_races
+                    ORDER BY zenhan_3f ASC
+                    LIMIT (SELECT COUNT(*) / 5 FROM valid_races)
+                ) top_20_percent
                 """, (keibajo_code, kyori))
             else:
                 # 1201m以上: Ten3FEstimator を使用
@@ -157,13 +162,23 @@ def calculate_base_times_from_real_data():
                         zenhan_3f_list.append(zenhan_3f)
                         kohan_3f_list.append(kohan_3f)
                     
-                    # 中央値を計算
+                    # 上位20%の平均を計算
                     import numpy as np
-                    median_zenhan = float(np.median(zenhan_3f_list))
-                    median_kohan = float(np.median(kohan_3f_list))
+                    zenhan_3f_array = np.array(zenhan_3f_list)
+                    kohan_3f_array = np.array(kohan_3f_list)
+                    
+                    # 前半3Fで上位20%を抽出（速い馬）
+                    top_20_count = max(1, len(zenhan_3f_array) // 5)
+                    top_20_indices_zenhan = np.argsort(zenhan_3f_array)[:top_20_count]
+                    
+                    # 後半3Fで上位20%を抽出（速い馬）
+                    top_20_indices_kohan = np.argsort(kohan_3f_array)[:top_20_count]
+                    
+                    avg_zenhan = float(np.mean(zenhan_3f_array[top_20_indices_zenhan]))
+                    avg_kohan = float(np.mean(kohan_3f_array[top_20_indices_kohan]))
                     race_count = len(rows)
                     
-                    row = (median_zenhan, median_kohan, race_count)
+                    row = (avg_zenhan, avg_kohan, race_count)
                 else:
                     row = None
                 
@@ -175,17 +190,17 @@ def calculate_base_times_from_real_data():
             
             row = cur.fetchone() if kyori <= 1200 else row
             if row and row[2] > 0:
-                median_zenhan = float(row[0])
-                median_kohan = float(row[1])
+                avg_zenhan = float(row[0])
+                avg_kohan = float(row[1])
                 race_count = row[2]
                 
                 results[keibajo_code][kyori] = {
-                    'zenhan_3f': round(median_zenhan, 1),
-                    'kohan_3f': round(median_kohan, 1),
+                    'zenhan_3f': round(avg_zenhan, 1),
+                    'kohan_3f': round(avg_kohan, 1),
                     'race_count': race_count
                 }
                 
-                print(f"  距離 {kyori:4d}m: 前半3F={median_zenhan:5.1f}秒, 後半3F={median_kohan:5.1f}秒 (レース数:{race_count:5d})")
+                print(f"  距離 {kyori:4d}m: 前半3F={avg_zenhan:5.1f}秒, 後半3F={avg_kohan:5.1f}秒 (レース数:{race_count:5d})")
     
     conn.close()
     
