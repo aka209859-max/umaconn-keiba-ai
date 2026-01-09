@@ -107,9 +107,7 @@ def calculate_base_times_from_real_data():
                     CAST(se.soha_time AS NUMERIC) / 10.0 as soha_time,
                     CAST(se.kohan_3f AS NUMERIC) / 10.0 as kohan_3f,
                     CAST(se.corner_1 AS INTEGER) as corner_1,
-                    CAST(se.corner_2 AS INTEGER) as corner_2,
-                    CAST(se.corner_3 AS INTEGER) as corner_3,
-                    CAST(se.corner_4 AS INTEGER) as corner_4
+                    CAST(se.corner_2 AS INTEGER) as corner_2
                 FROM nvd_ra ra
                 JOIN nvd_se se ON 
                     ra.kaisai_nen = se.kaisai_nen AND
@@ -144,19 +142,17 @@ def calculate_base_times_from_real_data():
                         kohan_3f = row[1]
                         corner_1 = row[2] if row[2] else 0
                         corner_2 = row[3] if row[3] else 0
-                        corner_3 = row[4] if row[4] else 0
-                        corner_4 = row[5] if row[5] else 0
                         
-                        # Ten3FEstimator で推定
-                        zenhan_3f = estimator.estimate(
+                        # Ten3FEstimator で推定（辞書を返す）
+                        result = estimator.estimate(
                             time_seconds=soha_time,
                             kohan_3f_seconds=kohan_3f,
                             kyori=kyori,
                             corner_1=corner_1,
-                            corner_2=corner_2,
-                            corner_3=corner_3,
-                            corner_4=corner_4
+                            corner_2=corner_2
                         )
+                        
+                        zenhan_3f = result['ten_3f_final']
                         
                         zenhan_3f_list.append(zenhan_3f)
                         kohan_3f_list.append(kohan_3f)
