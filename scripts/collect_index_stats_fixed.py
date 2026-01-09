@@ -23,12 +23,20 @@ from collections import defaultdict
 from typing import Dict, List, Tuple
 import logging
 
-# ロギング設定
+# ロギング設定（ファイルとコンソールの両方に出力）
+log_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'output', f'collect_index_stats_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.DEBUG,  # DEBUG レベルに変更
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(log_file, encoding='utf-8'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
+logger.info(f"ログファイル: {log_file}")
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -110,7 +118,7 @@ def get_period_for_track(keibajo_code: str) -> Tuple[str, str, str]:
 # データ取得
 # ================================================================================
 
-def parse_corner_position(corner_str: str, umaban: str) -> int:
+def parse_corner_position(corner_str: str, umaban: str, debug=False) -> int:
     """
     nvd_ra.corner_tsuka_juni_X から指定馬番のコーナー順位を取得
     
@@ -123,15 +131,20 @@ def parse_corner_position(corner_str: str, umaban: str) -> int:
     Args:
         corner_str: コーナー通過順位文字列
         umaban: 馬番（文字列または整数）
+        debug: デバッグログを出力するか
     
     Returns:
         コーナー順位（見つからない場合は0）
     """
     if not corner_str or corner_str.strip() == '' or corner_str == '00':
+        if debug:
+            logger.debug(f"コーナーデータなし: corner_str='{corner_str}', umaban={umaban}")
         return 0
     
     try:
         target_umaban = str(umaban).strip()
+        # 0埋めパターンも試す（例: '01', '02', ...）
+        target_umaban_padded = target_umaban.zfill(2)
         position = 1  # 順位カウンター
         
         # カンマで分割
@@ -147,15 +160,22 @@ def parse_corner_position(corner_str: str, umaban: str) -> int:
                 # カッコ内の馬番を分割
                 horses = part[1:-1].split(',')
                 for horse in horses:
-                    if horse.strip() == target_umaban:
+                    horse_stripped = horse.strip()
+                    if horse_stripped == target_umaban or horse_stripped == target_umaban_padded:
+                        if debug:
+                            logger.debug(f"✅ 同着で発見: corner_str='{corner_str}', umaban={umaban}, position={position}")
                         return position
                 position += len(horses)
             else:
                 # 通常の場合
-                if part == target_umaban:
+                if part == target_umaban or part == target_umaban_padded:
+                    if debug:
+                        logger.debug(f"✅ 発見: corner_str='{corner_str}', umaban={umaban}, position={position}")
                     return position
                 position += 1
         
+        if debug:
+            logger.debug(f"❌ 見つからず: corner_str='{corner_str}', umaban={umaban}, target={target_umaban}/{target_umaban_padded}, parts={parts}")
         return 0  # 見つからない場合
     except Exception as e:
         logger.warning(f"コーナー順位パースエラー (馬番{umaban}): {e}")
@@ -258,15 +278,22 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
     
     columns = [desc[0] for desc in cursor.description]
     races = []
+    debug_count = 0  # デバッグ用カウンター
     for row in cursor.fetchall():
         race_data = dict(zip(columns, row))
         
         # nvd_ra.corner_tsuka_juni_X から個別馬のコーナー順位を抽出
         umaban = race_data.get('umaban', '01')
-        race_data['corner_1'] = parse_corner_position(race_data.get('corner_tsuka_juni_1', ''), umaban)
-        race_data['corner_2'] = parse_corner_position(race_data.get('corner_tsuka_juni_2', ''), umaban)
-        race_data['corner_3'] = parse_corner_position(race_data.get('corner_tsuka_juni_3', ''), umaban)
-        race_data['corner_4'] = parse_corner_position(race_data.get('corner_tsuka_juni_4', ''), umaban)
+        enable_debug = (debug_count < 10)  # 最初の10件のみデバッグログ出力
+        
+        race_data['corner_1'] = parse_corner_position(race_data.get('corner_tsuka_juni_1', ''), umaban, debug=enable_debug)
+        race_data['corner_2'] = parse_corner_position(race_data.get('corner_tsuka_juni_2', ''), umaban, debug=enable_debug)
+        race_data['corner_3'] = parse_corner_position(race_data.get('corner_tsuka_juni_3', ''), umaban, debug=enable_debug)
+        race_data['corner_4'] = parse_corner_position(race_data.get('corner_tsuka_juni_4', ''), umaban, debug=enable_debug)
+        
+        if enable_debug:
+            logger.debug(f"📊 レース{debug_count+1}: 馬番={umaban}, c1={race_data['corner_1']}, c2={race_data['corner_2']}, c3={race_data['corner_3']}, c4={race_data['corner_4']}")
+            debug_count += 1
         
         # nvd_o1.odds_fukusho から馬番のオッズを抽出
         if 'odds_fukusho' in race_data and race_data['odds_fukusho']:
