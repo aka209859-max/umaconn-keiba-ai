@@ -97,8 +97,8 @@ def recalculate_base_times():
         query = """
         SELECT 
             CAST(ra.kyori AS INTEGER) AS kyori,
-            (CAST(se.soha_time AS DECIMAL) - CAST(se.kohan_3f AS DECIMAL)) AS zenhan_3f,
-            CAST(se.kohan_3f AS DECIMAL) AS kohan_3f
+            se.soha_time,
+            se.kohan_3f
         FROM nvd_ra ra
         JOIN nvd_se se ON 
             ra.kaisai_nen = se.kaisai_nen AND
@@ -114,12 +114,8 @@ def recalculate_base_times():
           AND CAST(se.kakutei_chakujun AS INTEGER) BETWEEN 1 AND 3
           AND se.soha_time IS NOT NULL
           AND se.kohan_3f IS NOT NULL
-          AND se.soha_time ~ '^[0-9.]+$'
-          AND se.kohan_3f ~ '^[0-9.]+$'
-          AND CAST(se.soha_time AS DECIMAL) > 0
-          AND CAST(se.kohan_3f AS DECIMAL) > 0
-          AND (CAST(se.soha_time AS DECIMAL) - CAST(se.kohan_3f AS DECIMAL)) > 0
-        ORDER BY kyori, zenhan_3f, kohan_3f
+          AND se.soha_time ~ '^[0-9]+$'
+          AND se.kohan_3f ~ '^[0-9]+$'
         """
         
         # 日付フォーマットを YYYYMMDD に変換
@@ -138,13 +134,31 @@ def recalculate_base_times():
         
         for row in rows:
             kyori = row[0]
-            zenhan_3f = float(row[1]) if row[1] is not None else 0.0
-            kohan_3f = float(row[2]) if row[2] is not None else 0.0
+            soha_time_str = str(row[1])
+            kohan_3f_str = str(row[2])
             
-            # データ検証: 前半3Fは20-50秒、後半3Fは30-50秒が妥当
-            if 20.0 <= zenhan_3f <= 50.0 and 30.0 <= kohan_3f <= 50.0:
-                distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
-                distance_data[kyori]['kohan_3f'].append(kohan_3f)
+            try:
+                # soha_time: 1149 → 1分14.9秒 = 74.9秒
+                if len(soha_time_str) >= 3:
+                    minutes = int(soha_time_str[:-2])
+                    seconds_tenths = int(soha_time_str[-2:])
+                    soha_time_sec = minutes * 60 + seconds_tenths / 10.0
+                else:
+                    soha_time_sec = int(soha_time_str) / 10.0
+                
+                # kohan_3f: 387 → 38.7秒
+                kohan_3f_sec = float(kohan_3f_str) / 10.0
+                
+                # zenhan_3f（前半3F）= 走破タイム - 後半3F
+                zenhan_3f = soha_time_sec - kohan_3f_sec
+                
+                # データ検証: 前半3Fは20-50秒、後半3Fは30-50秒が妥当
+                if 20.0 <= zenhan_3f <= 50.0 and 30.0 <= kohan_3f_sec <= 50.0:
+                    distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
+                    distance_data[kyori]['kohan_3f'].append(kohan_3f_sec)
+            except (ValueError, ZeroDivisionError):
+                # 変換エラーは無視
+                continue
         
         # 距離別の基準タイムを計算
         base_times_data[keibajo_code] = {}
