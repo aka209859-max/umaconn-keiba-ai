@@ -60,11 +60,11 @@ def show_keibajo_index_stats():
         SELECT 
             keibajo_code,
             index_value,
-            SUM(total_races) AS total_races,
+            SUM(cnt_win) AS total_races,
             SUM(cnt_win) AS cnt_win,
             SUM(cnt_place) AS cnt_place,
-            AVG(avg_win_rate) AS avg_win_rate,
-            AVG(avg_place_rate) AS avg_place_rate
+            AVG(rate_win_hit) AS avg_win_rate,
+            AVG(rate_place_hit) AS avg_place_rate
         FROM nar_hqs_index_stats
         WHERE index_type = %s
         GROUP BY keibajo_code, index_value
@@ -147,8 +147,8 @@ def show_keibajo_index_stats():
     SELECT 
         keibajo_code,
         COUNT(DISTINCT index_type) AS index_count,
-        SUM(total_races) AS total_races,
-        AVG(avg_win_rate) AS avg_win_rate
+        SUM(cnt_win) AS total_races,
+        AVG(rate_win_hit) AS avg_win_rate
     FROM nar_hqs_index_stats
     GROUP BY keibajo_code
     ORDER BY keibajo_code
@@ -200,7 +200,7 @@ def show_keibajo_comparison():
             STDDEV(CAST(index_value AS NUMERIC)) AS stddev_value,
             MIN(CAST(index_value AS INTEGER)) AS min_value,
             MAX(CAST(index_value AS INTEGER)) AS max_value,
-            SUM(total_races) AS total_races
+            SUM(cnt_win) AS total_races
         FROM nar_hqs_index_stats
         WHERE index_type = %s
         GROUP BY keibajo_code
