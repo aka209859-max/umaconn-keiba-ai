@@ -331,6 +331,7 @@ def calculate_ten_index(
     テン指数を計算
     
     テン指数 = ((基準3Fタイム - 実走3Fタイム) + 馬場差補正 + 不利補正 + 枠順補正 + 斤量補正) × 10
+    ※ 大きいほど強い（速い）
     
     Args:
         zenhan_3f: 前半3Fタイム（秒）
@@ -367,7 +368,9 @@ def calculate_ten_index(
     # 斤量補正
     kinryo_correction, kinryo_desc = get_kinryo_correction(kinryo, bataiju)
     
-    # テン指数計算
+    # テン指数計算（符号反転: プラスが良い形に修正）
+    # 修正: (base_time - zenhan_3f) の符号を反転
+    # 速い馬（zenhan_3f < base_time）がプラスになるように
     ten_index = ((base_time - zenhan_3f) + baba_correction + furi_correction + waku_correction + kinryo_correction) * 10
     
     # 範囲制限
@@ -394,7 +397,8 @@ def calculate_position_index(
     """
     位置指数を計算
     
-    位置指数 = (平均通過順位 / 出走頭数) × 100 + 枠順補正
+    位置指数 = 100 - (平均通過順位 / 出走頭数) × 100 + 枠順補正
+    ※ 大きいほど強い（先頭に近い）
     
     Args:
         corner_1: 1コーナー通過順位
@@ -406,7 +410,7 @@ def calculate_position_index(
         kyori: 距離（m）
     
     Returns:
-        位置指数（0 〜 100、小さいほど先頭に近い）
+        位置指数（0 〜 100、大きいほど先頭に近い）
     """
     # 有効なコーナー順位のみ使用
     valid_corners = [c for c in [corner_1, corner_2, corner_3, corner_4] if c > 0]
@@ -418,13 +422,13 @@ def calculate_position_index(
     # 平均通過順位
     avg_position = sum(valid_corners) / len(valid_corners)
     
-    # 位置指数（0-100の範囲に正規化）
-    position_index = (avg_position / tosu) * 100 if tosu > 0 else 50.0
+    # 位置指数（0-100の範囲に正規化、反転して大きいほど強い）
+    position_index = 100 - ((avg_position / tosu) * 100 if tosu > 0 else 50.0)
     
     # 枠順補正（短距離で内枠有利、外枠不利）
     waku_correction, waku_desc = get_wakuban_correction(wakuban, tosu, kyori)
-    # 位置指数への影響は逆符号（内枠ほど先頭に近い＝指数が小さくなる）
-    position_waku_correction = -waku_correction * 15  # 位置指数への影響度調整
+    # 位置指数への影響は同符号（内枠ほど先頭に近い＝指数が大きくなる）
+    position_waku_correction = waku_correction * 15  # 位置指数への影響度調整
     
     position_index = position_index + position_waku_correction
     
@@ -454,6 +458,7 @@ def calculate_agari_index(
     上がり指数を計算
     
     上がり指数 = ((基準後半3Fタイム - 実走後半3Fタイム) + 馬場差補正 + 不利補正 + 斤量補正 + ペース補正) × 10
+    ※ 大きいほど強い（速い）
     
     Args:
         kohan_3f: 後半3Fタイム（秒）
