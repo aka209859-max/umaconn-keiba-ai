@@ -254,8 +254,16 @@ def calculate_indexes_for_horse(horse_data: Dict) -> Dict[str, float]:
     """
     # データの安全な取得
     kyori = safe_int(horse_data.get('kyori'), 1200)
-    soha_time = safe_float(horse_data.get('soha_time'), 0.0)
-    kohan_3f = safe_float(horse_data.get('kohan_3f'), 0.0)
+    
+    # 【重要】soha_time と kohan_3f はデータベースで 1/10秒単位のため、秒単位に変換
+    soha_time_raw = safe_float(horse_data.get('soha_time'), 0.0)
+    kohan_3f_raw = safe_float(horse_data.get('kohan_3f'), 0.0)
+    
+    # 1/10秒単位 (385) → 秒単位 (38.5) に変換
+    # 値が100以上の場合は1/10秒単位と判定
+    soha_time = soha_time_raw / 10.0 if soha_time_raw > 100 else soha_time_raw
+    kohan_3f = kohan_3f_raw / 10.0 if kohan_3f_raw > 100 else kohan_3f_raw
+    
     baba_code = str(horse_data.get('baba_code', '1'))
     keibajo_code = str(horse_data.get('keibajo_code', '42'))
     tosu = safe_int(horse_data.get('tosu'), 10)
