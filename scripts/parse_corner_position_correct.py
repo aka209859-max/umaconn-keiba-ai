@@ -39,9 +39,12 @@ def parse_corner_position(corner_str: str, umaban: str) -> int:
         # Step 1: 固定長72文字の末尾スペースを削除
         corner_str = corner_str.strip()
         
-        # Step 2: 先頭1文字（コーナー番号）を削除
-        if len(corner_str) > 0 and corner_str[0].isdigit():
-            corner_str = corner_str[1:]
+        # Step 2: 先頭のコーナー番号+馬番を削除（最初のカンマまで）
+        # 例: '115,7,11,...' → '7,11,...'
+        if ',' in corner_str:
+            corner_str = corner_str[corner_str.index(',')+1:]
+        else:
+            return 0  # カンマがない = 不正なデータ
         
         # Step 3: 馬番を正規化（0埋めパターンも対応）
         target_umaban = str(umaban).strip().lstrip('0') or '0'
