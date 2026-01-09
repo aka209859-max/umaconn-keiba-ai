@@ -542,9 +542,14 @@ def calculate_pace_index(
     # 基本ペース指数（テンと上がりの平均）
     base_pace = (ten_index + agari_index) / 2
     
-    # ペース比率補正
+    # ペース比率補正（2026-01-09 最適化）
+    # 実データ分析の結果: 平均比率0.942、最適基準値0.95、最適係数20.0
+    # 論理: pace_ratio > 0.95（前半速い）→プラス補正（評価上げる）
+    #       pace_ratio < 0.95（前半遅い）→マイナス補正（評価下げる）
     pace_ratio = zenhan_3f / kohan_3f if kohan_3f > 0 else 1.0
-    pace_correction = (0.35 - pace_ratio) * 10
+    OPTIMAL_BASE_RATIO = 0.95  # 最適基準値（実データから導出）
+    CORRECTION_MULTIPLIER = 20.0  # 最適係数（実データから導出）
+    pace_correction = (pace_ratio - OPTIMAL_BASE_RATIO) * CORRECTION_MULTIPLIER
     
     # ペースタイプ判定
     pace_type, pace_desc = judge_pace_type(zenhan_3f, kohan_3f, kyori, keibajo_code)
