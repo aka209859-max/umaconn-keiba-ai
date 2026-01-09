@@ -11,8 +11,11 @@ Date: 2026-01-07
 """
 
 import numpy as np
+import pandas as pd
+import os
 from typing import Dict, Optional, Any
 import logging
+from config.base_times import get_base_time
 
 # ロギング設定
 logging.basicConfig(level=logging.INFO)
@@ -62,27 +65,50 @@ class Ten3FEstimator:
             ml_model: Layer 3で使用する機械学習モデル（オプション）
         """
         self.ml_model = ml_model
+        
+        # クラス別標準走破タイムを読み込み
+        csv_path = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            'config',
+            'standard_total_times_by_class.csv'
+        )
+        
+        try:
+            self.standard_times_by_class = pd.read_csv(csv_path)
+            logger.info(f"Loaded standard times by class: {len(self.standard_times_by_class)} rows")
+        except Exception as e:
+            logger.warning(f"Failed to load standard times by class: {e}")
+            self.standard_times_by_class = None
+        
         logger.info("Ten3FEstimator initialized")
     
     def estimate_baseline(
         self,
         time_seconds: float,
         kohan_3f_seconds: Optional[float],
-        kyori: int
+        kyori: int,
+        keibajo_code: str = None,
+        grade_code: str = None
     ) -> float:
         """
-        Layer 1: ベースライン推定（統計的比率）
+        Layer 1: ベースライン推定（理論文書準拠）
+        
+        理論文書の計算式:
+        - 1200m以下: zenhan_3f = time_seconds - kohan_3f_seconds（確定値）
+        - 1201m以上: 基準タイム + スピード指数補正
         
         Args:
             time_seconds: 走破タイム（秒）
             kohan_3f_seconds: 上がり3F（秒）、Noneの場合は推定
             kyori: 距離（m）
+            keibajo_code: 競馬場コード（1201m以上で必要）
+            grade_code: グレードコード（クラス別補正用）
         
         Returns:
             推定前半3F（秒）
         """
-        # 1200m戦の特別処理（確定値）
-        if kyori == 1200:
+        # 1200m以下: 確定値（理論文書準拠）
+        if kyori <= 1200:
             if kohan_3f_seconds is not None:
                 # T_First3F = T_finish - T_Last3F
                 return time_seconds - kohan_3f_seconds
@@ -90,11 +116,38 @@ class Ten3FEstimator:
                 # 上がり3Fがない場合の推定（前後半均等と仮定）
                 return time_seconds * 0.50
         
-        # 1400m以上の推定（距離別比率使用）
+        # 1201m以上: 基準タイム + スピード指数補正（理論文書準拠）
+        if keibajo_code is None:
+            # フォールバック: 距離別比率使用
+            ratio = self._get_distance_ratio(kyori)
+            baseline = time_seconds * ratio
+            return np.clip(baseline, self.MIN_TEN_3F, self.MAX_TEN_3F)
+        
+        # 基準タイム（前半3F）を取得
+        base_zenhan = get_base_time(keibajo_code, kyori, 'zenhan_3f')
+        
+        # 標準走破タイム（クラス別）を取得
+        std_total = self._get_standard_total_time(keibajo_code, kyori, grade_code)
+        
+        if std_total and base_zenhan:
+            # スピード指数で補正（理論文書 55行目）
+            # race_speed_index = (standard_times['total_std'] - T_total)
+            # leader_est_ten3f = std_ten3f - (race_speed_index * 0.3)
+            speed_index = std_total - time_seconds
+            adjusted_zenhan = base_zenhan - (speed_index * 0.3)
+            
+            logger.debug(f"Speed index correction: base={base_zenhan:.2f}, "
+                        f"speed_index={speed_index:.2f}, adjusted={adjusted_zenhan:.2f}")
+            
+            return np.clip(adjusted_zenhan, 30.0, 45.0)
+        
+        # フォールバック: 基準タイムのみ
+        if base_zenhan:
+            return base_zenhan
+        
+        # 最終フォールバック: 距離別比率
         ratio = self._get_distance_ratio(kyori)
         baseline = time_seconds * ratio
-        
-        # 物理的制約でクリッピング
         return np.clip(baseline, self.MIN_TEN_3F, self.MAX_TEN_3F)
     
     def _get_distance_ratio(self, kyori: int) -> float:
@@ -130,6 +183,75 @@ class Ten3FEstimator:
             return 0.50  # 短距離: 前後半均等
         else:
             return 0.15  # 超長距離: 前半の比率が低い
+    
+    def _get_class_name(self, grade_code: str) -> str:
+        """
+        grade_code から クラス名へマッピング（PCkeiba公式準拠）
+        
+        Args:
+            grade_code: nvd_ra.grade_code
+        
+        Returns:
+            '上位クラス', 'E級', '一般戦'
+        """
+        grade_code = grade_code.strip() if grade_code else ''
+        
+        if grade_code == 'E':
+            return 'E級'
+        elif grade_code in ['A', 'B', 'C', 'D', 'P', 'Q', 'R', 'S', 'T']:
+            return '上位クラス'
+        else:
+            return '一般戦'
+    
+    def _get_standard_total_time(
+        self,
+        keibajo_code: str,
+        kyori: int,
+        grade_code: str = None
+    ) -> Optional[float]:
+        """
+        標準走破タイムを取得（クラス別優先）
+        
+        Args:
+            keibajo_code: 競馬場コード
+            kyori: 距離(m)
+            grade_code: グレードコード（オプション）
+        
+        Returns:
+            標準走破タイム（秒）、データがない場合はNone
+        """
+        if self.standard_times_by_class is None:
+            return None
+        
+        # クラス名を取得
+        if grade_code:
+            class_name = self._get_class_name(grade_code)
+            
+            # クラス別データを検索
+            row = self.standard_times_by_class[
+                (self.standard_times_by_class['競馬場コード'] == keibajo_code) &
+                (self.standard_times_by_class['距離(m)'] == kyori) &
+                (self.standard_times_by_class['クラス'] == class_name)
+            ]
+            
+            if not row.empty:
+                std_time = row.iloc[0]['基準タイム(秒)']
+                logger.debug(f"Standard total time: {keibajo_code} {kyori}m {class_name} = {std_time:.2f}秒")
+                return std_time
+        
+        # フォールバック: クラス混合（一般戦を使用）
+        row = self.standard_times_by_class[
+            (self.standard_times_by_class['競馬場コード'] == keibajo_code) &
+            (self.standard_times_by_class['距離(m)'] == kyori) &
+            (self.standard_times_by_class['クラス'] == '一般戦')
+        ]
+        
+        if not row.empty:
+            std_time = row.iloc[0]['基準タイム(秒)']
+            logger.debug(f"Standard total time (fallback): {keibajo_code} {kyori}m 一般戦 = {std_time:.2f}秒")
+            return std_time
+        
+        return None
     
     def adjust_by_position(
         self,
@@ -307,8 +429,15 @@ class Ten3FEstimator:
                 'method': 使用した推定方法
             }
         """
-        # Layer 1: ベースライン推定
-        baseline = self.estimate_baseline(time_seconds, kohan_3f_seconds, kyori)
+        # Layer 1: ベースライン推定（理論文書準拠）
+        # 注意: keibajo_code, grade_code を渡す必要がある
+        baseline = self.estimate_baseline(
+            time_seconds,
+            kohan_3f_seconds,
+            kyori,
+            keibajo_code=None,  # 呼び出し元で設定される
+            grade_code=None
+        )
         
         # Layer 2: 展開パターン補正（1200m以下はスキップ）
         adjusted = self.adjust_by_position(baseline, corner_1, corner_2, kyori, field_size)
