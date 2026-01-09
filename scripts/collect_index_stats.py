@@ -310,12 +310,12 @@ def calculate_indexes_for_horse(horse_data: Dict) -> Dict[str, float]:
     except Exception as e:
         pace_index = 0.0
     
-    # 10刻みに丸める
+    # 1刻みに丸める（整数化）
     return {
-        'ten': round(ten_index / 10) * 10,
-        'position': round(position_index / 10) * 10,
-        'agari': round(agari_index / 10) * 10,
-        'pace': round(pace_index / 10) * 10
+        'ten': round(ten_index),
+        'position': round(position_index),
+        'agari': round(agari_index),
+        'pace': round(pace_index)
     }
 
 
