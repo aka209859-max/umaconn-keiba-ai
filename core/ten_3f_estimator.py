@@ -401,7 +401,9 @@ class Ten3FEstimator:
         corner_1: Optional[int] = None,
         corner_2: Optional[int] = None,
         field_size: int = 12,
-        use_ml: bool = True
+        use_ml: bool = True,
+        keibajo_code: str = None,
+        grade_code: str = None
     ) -> Dict[str, float]:
         """
         統合推定メソッド（Layer 1 + Layer 2 + Layer 3）
@@ -430,13 +432,12 @@ class Ten3FEstimator:
             }
         """
         # Layer 1: ベースライン推定（理論文書準拠）
-        # 注意: keibajo_code, grade_code を渡す必要がある
         baseline = self.estimate_baseline(
             time_seconds,
             kohan_3f_seconds,
             kyori,
-            keibajo_code=None,  # 呼び出し元で設定される
-            grade_code=None
+            keibajo_code=keibajo_code,
+            grade_code=grade_code
         )
         
         # Layer 2: 展開パターン補正（1200m以下はスキップ）

@@ -185,7 +185,9 @@ def recalculate_base_times():
                         kyori=kyori,
                         corner_1=corner_1,
                         corner_2=corner_2,
-                        use_ml=False  # MLモデルなしでベースライン推定のみ
+                        use_ml=False,  # MLモデルなしでベースライン推定のみ
+                        keibajo_code=keibajo_code,
+                        grade_code=None  # クラス情報なし（フォールバック）
                     )
                     zenhan_3f = result['ten_3f_final']
                 
