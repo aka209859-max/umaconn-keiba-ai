@@ -138,10 +138,10 @@ def calculate_base_times_from_real_data():
                     kohan_3f_list = []
                     
                     for row in rows:
-                        soha_time = row[0]
-                        kohan_3f = row[1]
-                        corner_1 = row[2] if row[2] else 0
-                        corner_2 = row[3] if row[3] else 0
+                        soha_time = float(row[0])
+                        kohan_3f = float(row[1])
+                        corner_1 = int(row[2]) if row[2] else 0
+                        corner_2 = int(row[3]) if row[3] else 0
                         
                         # Ten3FEstimator で推定（辞書を返す）
                         result = estimator.estimate(
