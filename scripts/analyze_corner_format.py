@@ -28,7 +28,7 @@ def analyze_corner_format():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1400m以上のレースから1000件サンプリング
+    # 馬場良のレースから1000件サンプリング（距離フィルタなし）
     query = """
     SELECT 
         ra.corner_tsuka_juni_1,
@@ -36,9 +36,11 @@ def analyze_corner_format():
         ra.corner_tsuka_juni_3,
         ra.corner_tsuka_juni_4
     FROM nvd_ra ra
-    WHERE CAST(ra.kyori AS INTEGER) >= 1400
-      AND ra.babajotai_code_dirt = '1'
+    WHERE ra.babajotai_code_dirt = '1'
       AND ra.kaisai_nen || ra.kaisai_tsukihi >= '20200101'
+      AND ra.corner_tsuka_juni_1 IS NOT NULL
+      AND ra.corner_tsuka_juni_1 != ''
+      AND ra.corner_tsuka_juni_1 != '00'
     LIMIT 1000
     """
     
