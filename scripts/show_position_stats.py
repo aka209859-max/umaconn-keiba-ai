@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Position指数の統計データを表示
+Position指数の的中率・回収率データを表示
 """
 
 import psycopg2
@@ -16,55 +16,102 @@ conn = psycopg2.connect(
 
 cur = conn.cursor()
 
-# Position指数の統計サンプル表示
+# Position指数の統計表示
 cur.execute("""
-    SELECT keibajo_code, kyori, 
-           position_index_avg, position_index_stddev,
-           position_index_max, position_index_min,
-           data_count
+    SELECT 
+        keibajo_code,
+        index_value,
+        cnt_win,
+        hit_win,
+        rate_win_hit,
+        adj_win_ret,
+        cnt_place,
+        hit_place,
+        rate_place_hit,
+        adj_place_ret
     FROM nar_hqs_index_stats 
-    WHERE position_index_avg IS NOT NULL 
-    ORDER BY keibajo_code, kyori 
-    LIMIT 20
+    WHERE index_type = 'position'
+    ORDER BY keibajo_code, CAST(index_value AS INTEGER)
+    LIMIT 30
 """)
 
-print("="*100)
-print("Position指数の統計データ（先頭20件）")
-print("="*100)
-print(f"{'競馬場':8s} | {'距離':6s} | {'平均':8s} | {'標準偏差':8s} | {'最大':8s} | {'最小':8s} | {'件数':6s}")
-print("-"*100)
+print("="*120)
+print("Position指数の的中率・回収率データ（先頭30件）")
+print("="*120)
+print(f"{'競馬場':4s} | {'指数':4s} | {'単勝試行':8s} | {'単勝的中':8s} | {'単勝率':6s} | {'単勝回収':8s} | {'複勝試行':8s} | {'複勝的中':8s} | {'複勝率':6s} | {'複勝回収':8s}")
+print("-"*120)
 
 for row in cur.fetchall():
-    keibajo = row[0] if row[0] else '不明'
-    kyori = row[1] if row[1] else '不明'
-    avg = row[2] if row[2] is not None else 0.0
-    stddev = row[3] if row[3] is not None else 0.0
-    max_val = row[4] if row[4] is not None else 0.0
-    min_val = row[5] if row[5] is not None else 0.0
-    count = row[6] if row[6] is not None else 0
+    keibajo = row[0] or '不明'
+    idx_val = row[1] or '0'
+    cnt_w = row[2] or 0
+    hit_w = row[3] or 0
+    rate_w = row[4] or 0.0
+    ret_w = row[5] or 0.0
+    cnt_p = row[6] or 0
+    hit_p = row[7] or 0
+    rate_p = row[8] or 0.0
+    ret_p = row[9] or 0.0
     
-    print(f"{keibajo:8s} | {kyori:6s} | {avg:8.2f} | {stddev:8.2f} | {max_val:8.2f} | {min_val:8.2f} | {count:6d}")
+    print(f"{keibajo:4s} | {idx_val:4s} | {cnt_w:8d} | {hit_w:8d} | {rate_w:6.2f} | {ret_w:8.2f} | {cnt_p:8d} | {hit_p:8d} | {rate_p:6.2f} | {ret_p:8.2f}")
 
 # 全体統計
 cur.execute("""
     SELECT 
-        COUNT(*) as total_records,
-        COUNT(CASE WHEN position_index_avg IS NOT NULL THEN 1 END) as position_records,
-        COUNT(CASE WHEN ten_index_avg IS NOT NULL THEN 1 END) as ten_records,
-        COUNT(CASE WHEN agari_index_avg IS NOT NULL THEN 1 END) as agari_records,
-        COUNT(CASE WHEN pace_index_avg IS NOT NULL THEN 1 END) as pace_records
+        index_type,
+        COUNT(*) as record_count,
+        SUM(cnt_win) as total_races,
+        AVG(rate_win_hit) as avg_win_rate,
+        AVG(adj_win_ret) as avg_win_return
     FROM nar_hqs_index_stats
+    GROUP BY index_type
+    ORDER BY index_type
 """)
 
-stats = cur.fetchone()
-print("\n" + "="*100)
-print("全体統計")
-print("="*100)
-print(f"総レコード数:        {stats[0]:6d}件")
-print(f"Position指数データ: {stats[1]:6d}件 ({stats[1]/stats[0]*100:5.1f}%)")
-print(f"テン指数データ:     {stats[2]:6d}件 ({stats[2]/stats[0]*100:5.1f}%)")
-print(f"上がり指数データ:   {stats[3]:6d}件 ({stats[3]/stats[0]*100:5.1f}%)")
-print(f"ペース指数データ:   {stats[4]:6d}件 ({stats[4]/stats[0]*100:5.1f}%)")
-print("="*100)
+print("\n" + "="*120)
+print("指数タイプ別の全体統計")
+print("="*120)
+print(f"{'指数タイプ':12s} | {'レコード数':10s} | {'総レース数':10s} | {'平均単勝率':10s} | {'平均単勝回収':12s}")
+print("-"*120)
+
+for row in cur.fetchall():
+    idx_type = row[0] or '不明'
+    rec_cnt = row[1] or 0
+    total = row[2] or 0
+    avg_rate = row[3] or 0.0
+    avg_ret = row[4] or 0.0
+    
+    print(f"{idx_type:12s} | {rec_cnt:10d} | {total:10d} | {avg_rate:10.2f} | {avg_ret:12.2f}")
+
+print("="*120)
+
+# Position指数の分布確認
+cur.execute("""
+    SELECT 
+        index_value,
+        COUNT(*) as keibajo_count,
+        SUM(cnt_win) as total_races,
+        AVG(rate_win_hit) as avg_win_rate
+    FROM nar_hqs_index_stats
+    WHERE index_type = 'position'
+    GROUP BY index_value
+    ORDER BY CAST(index_value AS INTEGER)
+""")
+
+print("\n" + "="*120)
+print("Position指数の分布（指数値別）")
+print("="*120)
+print(f"{'指数値':8s} | {'競馬場数':10s} | {'総レース数':12s} | {'平均単勝率':12s}")
+print("-"*120)
+
+for row in cur.fetchall():
+    idx_val = row[0] or '0'
+    keibajo_cnt = row[1] or 0
+    total = row[2] or 0
+    avg_rate = row[3] or 0.0
+    
+    print(f"{idx_val:8s} | {keibajo_cnt:10d} | {total:12d} | {avg_rate:12.2f}")
+
+print("="*120)
 
 conn.close()
