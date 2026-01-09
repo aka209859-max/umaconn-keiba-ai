@@ -138,11 +138,13 @@ def recalculate_base_times():
         
         for row in rows:
             kyori = row[0]
-            zenhan_3f = row[1]
-            kohan_3f = row[2]
+            zenhan_3f = float(row[1]) if row[1] is not None else 0.0
+            kohan_3f = float(row[2]) if row[2] is not None else 0.0
             
-            distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
-            distance_data[kyori]['kohan_3f'].append(kohan_3f)
+            # データ検証: 前半3Fは20-50秒、後半3Fは30-50秒が妥当
+            if 20.0 <= zenhan_3f <= 50.0 and 30.0 <= kohan_3f <= 50.0:
+                distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
+                distance_data[kyori]['kohan_3f'].append(kohan_3f)
         
         # 距離別の基準タイムを計算
         base_times_data[keibajo_code] = {}
