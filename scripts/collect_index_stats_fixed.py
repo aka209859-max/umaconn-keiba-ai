@@ -296,7 +296,12 @@ def collect_race_data(conn, keibajo_code: str, start_date: str, end_date: str) -
         race_data['corner_4'] = parse_corner_position(race_data.get('corner_tsuka_juni_4', ''), umaban, debug=enable_debug)
         
         if enable_debug:
-            logger.debug(f"📊 レース{debug_count+1}: 馬番={umaban}, c1={race_data['corner_1']}, c2={race_data['corner_2']}, c3={race_data['corner_3']}, c4={race_data['corner_4']}")
+            # corner_tsuka_juni の生データも出力
+            logger.debug(f"📊 レース{debug_count+1}: 馬番={umaban}")
+            logger.debug(f"   corner_tsuka_juni_1 = '{race_data.get('corner_tsuka_juni_1', '')}' → c1={race_data['corner_1']}")
+            logger.debug(f"   corner_tsuka_juni_2 = '{race_data.get('corner_tsuka_juni_2', '')}' → c2={race_data['corner_2']}")
+            logger.debug(f"   corner_tsuka_juni_3 = '{race_data.get('corner_tsuka_juni_3', '')}' → c3={race_data['corner_3']}")
+            logger.debug(f"   corner_tsuka_juni_4 = '{race_data.get('corner_tsuka_juni_4', '')}' → c4={race_data['corner_4']}")
             debug_count += 1
         
         # nvd_o1.odds_fukusho から馬番のオッズを抽出
