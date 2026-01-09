@@ -152,8 +152,8 @@ def recalculate_base_times():
                 # zenhan_3f（前半3F）= 走破タイム - 後半3F
                 zenhan_3f = soha_time_sec - kohan_3f_sec
                 
-                # データ検証: 前半3Fは20-50秒、後半3Fは30-50秒が妥当
-                if 20.0 <= zenhan_3f <= 50.0 and 30.0 <= kohan_3f_sec <= 50.0:
+                # データ検証: kohan_3fは30-50秒、zenhan_3fは正の値であればOK
+                if zenhan_3f > 0 and 30.0 <= kohan_3f_sec <= 50.0:
                     distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
                     distance_data[kyori]['kohan_3f'].append(kohan_3f_sec)
             except (ValueError, ZeroDivisionError):
