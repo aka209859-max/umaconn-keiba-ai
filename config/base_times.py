@@ -298,14 +298,15 @@ BABA_CORRECTION = {
 # 5. ヘルパー関数
 # ============================
 
-def get_base_time(keibajo_code: str, kyori: int, time_type: str) -> float:
+def get_base_time(keibajo_code: str, kyori: int, time_type: str, grade_code: str = None) -> float:
     """
-    基準タイムを取得
+    基準タイムを取得（クラス別対応）
     
     Args:
         keibajo_code: 競馬場コード（30-65）
         kyori: 距離（m）
         time_type: 'zenhan_3f' or 'kohan_3f'
+        grade_code: グレードコード（オプション）クラス別基準タイムが利用可能な場合に使用
     
     Returns:
         基準タイム（秒）
@@ -318,13 +319,66 @@ def get_base_time(keibajo_code: str, kyori: int, time_type: str) -> float:
     
     # 完全一致
     if kyori in venue_times:
-        return venue_times[kyori][time_type]
+        base_time_data = venue_times[kyori]
+        
+        # クラス別データがある場合
+        if isinstance(base_time_data, dict) and any(k in base_time_data for k in ['上位クラス', 'E級', '一般戦']):
+            # grade_code がある場合、クラス名に変換
+            if grade_code:
+                if grade_code == 'E':
+                    class_name = 'E級'
+                elif grade_code in ['A', 'B', 'C', 'D', 'P', 'Q', 'R', 'S', 'T']:
+                    class_name = '上位クラス'
+                else:
+                    class_name = '一般戦'
+                
+                # クラス別データを返す
+                if class_name in base_time_data and time_type in base_time_data[class_name]:
+                    return base_time_data[class_name][time_type]
+            
+            # フォールバック: 一般戦を使用
+            if '一般戦' in base_time_data and time_type in base_time_data['一般戦']:
+                return base_time_data['一般戦'][time_type]
+            
+            # さらにフォールバック: E級を使用
+            if 'E級' in base_time_data and time_type in base_time_data['E級']:
+                return base_time_data['E級'][time_type]
+        
+        # 通常データ（クラス別でない）
+        if time_type in base_time_data:
+            return base_time_data[time_type]
     
     # 最も近い距離を検索
     closest_kyori = min(venue_times.keys(), key=lambda k: abs(k - kyori))
     logger.info(f"{ORGANIZERS.get(keibajo_code, {}).get('name', keibajo_code)}競馬場: 距離{kyori}mの基準タイムなし。{closest_kyori}mを使用")
     
-    return venue_times[closest_kyori][time_type]
+    closest_data = venue_times[closest_kyori]
+    
+    # クラス別データの処理（最も近い距離）
+    if isinstance(closest_data, dict) and any(k in closest_data for k in ['上位クラス', 'E級', '一般戦']):
+        if grade_code:
+            if grade_code == 'E':
+                class_name = 'E級'
+            elif grade_code in ['A', 'B', 'C', 'D', 'P', 'Q', 'R', 'S', 'T']:
+                class_name = '上位クラス'
+            else:
+                class_name = '一般戦'
+            
+            if class_name in closest_data and time_type in closest_data[class_name]:
+                return closest_data[class_name][time_type]
+        
+        # フォールバック
+        if '一般戦' in closest_data and time_type in closest_data['一般戦']:
+            return closest_data['一般戦'][time_type]
+        if 'E級' in closest_data and time_type in closest_data['E級']:
+            return closest_data['E級'][time_type]
+    
+    # 通常データ
+    if time_type in closest_data:
+        return closest_data[time_type]
+    
+    # 最終フォールバック
+    return 36.5 if time_type == 'zenhan_3f' else 39.0
 
 
 def get_organizer_info(keibajo_code: str) -> Dict:

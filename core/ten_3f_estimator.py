@@ -123,8 +123,8 @@ class Ten3FEstimator:
             baseline = time_seconds * ratio
             return np.clip(baseline, self.MIN_TEN_3F, self.MAX_TEN_3F)
         
-        # 基準タイム（前半3F）を取得
-        base_zenhan = get_base_time(keibajo_code, kyori, 'zenhan_3f')
+        # 基準タイム（前半3F）を取得（クラス別対応）
+        base_zenhan = get_base_time(keibajo_code, kyori, 'zenhan_3f', grade_code)
         
         # 標準走破タイム（クラス別）を取得
         std_total = self._get_standard_total_time(keibajo_code, kyori, grade_code)

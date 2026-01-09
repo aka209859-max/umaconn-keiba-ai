@@ -116,7 +116,8 @@ def recalculate_base_times():
             se.soha_time,
             se.kohan_3f,
             se.corner_1,
-            se.corner_2
+            se.corner_2,
+            ra.grade_code
         FROM nvd_ra ra
         JOIN nvd_se se ON 
             ra.kaisai_nen = se.kaisai_nen AND
@@ -147,8 +148,8 @@ def recalculate_base_times():
             print(f"  ⚠️ データなし")
             continue
         
-        # 距離別にデータを集計
-        distance_data = defaultdict(lambda: {'zenhan_3f': [], 'kohan_3f': []})
+        # 距離別・クラス別にデータを集計
+        distance_class_data = defaultdict(lambda: defaultdict(lambda: {'zenhan_3f': [], 'kohan_3f': []}))
         
         for row in rows:
             kyori = row[0]
@@ -156,6 +157,7 @@ def recalculate_base_times():
             kohan_3f_str = str(row[2])
             corner_1 = safe_int(row[3]) if len(row) > 3 else None
             corner_2 = safe_int(row[4]) if len(row) > 4 else None
+            grade_code = str(row[5]).strip() if len(row) > 5 else ''
             
             try:
                 # soha_time の変換（mSSd形式）
@@ -187,86 +189,115 @@ def recalculate_base_times():
                         corner_2=corner_2,
                         use_ml=False,  # MLモデルなしでベースライン推定のみ
                         keibajo_code=keibajo_code,
-                        grade_code=None  # クラス情報なし（フォールバック）
+                        grade_code=grade_code  # クラス情報あり（正確な推定）
                     )
                     zenhan_3f = result['ten_3f_final']
                 
+                # クラス名を取得（PCkeiba公式準拠）
+                if grade_code == 'E':
+                    class_name = 'E級'
+                elif grade_code in ['A', 'B', 'C', 'D', 'P', 'Q', 'R', 'S', 'T']:
+                    class_name = '上位クラス'
+                else:
+                    class_name = '一般戦'
+                
                 # データ検証: kohan_3fは30-50秒、zenhan_3fは正の値であればOK
                 if zenhan_3f > 0 and 30.0 <= kohan_seconds <= 50.0:
-                    distance_data[kyori]['zenhan_3f'].append(zenhan_3f)
-                    distance_data[kyori]['kohan_3f'].append(kohan_seconds)
+                    distance_class_data[kyori][class_name]['zenhan_3f'].append(zenhan_3f)
+                    distance_class_data[kyori][class_name]['kohan_3f'].append(kohan_seconds)
             except (ValueError, IndexError, ZeroDivisionError):
                 # 変換エラーは無視
                 continue
         
-        # 距離別の基準タイムを計算
+        # 距離別・クラス別の基準タイムを計算
         base_times_data[keibajo_code] = {}
         
-        for kyori in sorted(distance_data.keys()):
-            zenhan_list = sorted(distance_data[kyori]['zenhan_3f'])
-            kohan_list = sorted(distance_data[kyori]['kohan_3f'])
+        for kyori in sorted(distance_class_data.keys()):
+            print(f"\n  【{kyori}m】")
+            base_times_data[keibajo_code][kyori] = {}
             
-            # 上位30%の平均を基準タイムとする
-            zenhan_top30_count = max(1, int(len(zenhan_list) * 0.3))
-            kohan_top30_count = max(1, int(len(kohan_list) * 0.3))
-            
-            zenhan_top30 = zenhan_list[:zenhan_top30_count]
-            kohan_top30 = kohan_list[:kohan_top30_count]
-            
-            zenhan_avg = sum(zenhan_top30) / len(zenhan_top30)
-            kohan_avg = sum(kohan_top30) / len(kohan_top30)
-            
-            base_times_data[keibajo_code][kyori] = {
-                'zenhan_3f': round(zenhan_avg, 1),
-                'kohan_3f': round(kohan_avg, 1),
-            }
-            
-            print(f"  {kyori}m: 前半3F={zenhan_avg:.1f}秒 (上位30% N={len(zenhan_top30)}), "
-                  f"後半3F={kohan_avg:.1f}秒 (上位30% N={len(kohan_top30)})")
+            for class_name in ['上位クラス', 'E級', '一般戦']:
+                if class_name not in distance_class_data[kyori]:
+                    continue
+                
+                zenhan_list = sorted(distance_class_data[kyori][class_name]['zenhan_3f'])
+                kohan_list = sorted(distance_class_data[kyori][class_name]['kohan_3f'])
+                
+                if not zenhan_list or not kohan_list:
+                    continue
+                
+                # 上位30%の平均を基準タイムとする
+                zenhan_top30_count = max(1, int(len(zenhan_list) * 0.3))
+                kohan_top30_count = max(1, int(len(kohan_list) * 0.3))
+                
+                zenhan_top30 = zenhan_list[:zenhan_top30_count]
+                kohan_top30 = kohan_list[:kohan_top30_count]
+                
+                zenhan_avg = sum(zenhan_top30) / len(zenhan_top30)
+                kohan_avg = sum(kohan_top30) / len(kohan_top30)
+                
+                base_times_data[keibajo_code][kyori][class_name] = {
+                    'zenhan_3f': round(zenhan_avg, 1),
+                    'kohan_3f': round(kohan_avg, 1),
+                }
+                
+                print(f"    {class_name:8s}: 前半3F={zenhan_avg:.1f}秒 (N={len(zenhan_top30):4d}), "
+                      f"後半3F={kohan_avg:.1f}秒 (N={len(kohan_top30):4d})")
     
     cur.close()
     conn.close()
     
-    # 出力ファイルを生成
-    output_file = project_root / 'config' / 'base_times_recalculated.py'
+    # 出力ファイルを生成（クラス別基準タイム）
+    output_file = project_root / 'config' / 'base_times_recalculated_by_class.py'
     
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write('"""\n')
-        f.write('基準タイム（実データ分析に基づく再計算版）\n')
+        f.write('基準タイム（実データ分析に基づく再計算版・クラス別）\n')
         f.write('\n')
-        f.write('各競馬場・距離ごとに上位30%の平均タイムを基準タイムとして設定\n')
+        f.write('各競馬場・距離・クラスごとに上位30%の平均タイムを基準タイムとして設定\n')
         f.write('- データ期間: 通常 2016-01-01 〜 2025-12-31\n')
         f.write('- 大井（44）: 2023-10-01 〜 2025-12-31（白砂全面置換後）\n')
         f.write('- 名古屋（48）: 2022-04-01 〜 2025-12-31（移転後）\n')
         f.write('\n')
+        f.write('クラス分類（PCkeiba公式準拠）:\n')
+        f.write('- 上位クラス: A/B/C/D/P/Q/R/S/T\n')
+        f.write('- E級: E\n')
+        f.write('- 一般戦: その他\n')
+        f.write('\n')
         f.write('作成日: 2026-01-09\n')
-        f.write('作成者: 基準タイム再計算スクリプト\n')
+        f.write('作成者: 基準タイム再計算スクリプト（クラス別版）\n')
         f.write('"""\n')
         f.write('\n')
-        f.write('BASE_TIMES = {\n')
+        f.write('BASE_TIMES_BY_CLASS = {\n')
         
         for keibajo_code in sorted(base_times_data.keys()):
             keibajo_name = KEIBAJO_NAMES.get(keibajo_code, keibajo_code)
             f.write(f"    '{keibajo_code}': {{  # {keibajo_name}\n")
             
             for kyori in sorted(base_times_data[keibajo_code].keys()):
-                zenhan = base_times_data[keibajo_code][kyori]['zenhan_3f']
-                kohan = base_times_data[keibajo_code][kyori]['kohan_3f']
-                f.write(f"        {kyori}: {{'zenhan_3f': {zenhan}, 'kohan_3f': {kohan}}},\n")
+                f.write(f"        {kyori}: {{\n")
+                
+                for class_name in ['上位クラス', 'E級', '一般戦']:
+                    if class_name in base_times_data[keibajo_code][kyori]:
+                        zenhan = base_times_data[keibajo_code][kyori][class_name]['zenhan_3f']
+                        kohan = base_times_data[keibajo_code][kyori][class_name]['kohan_3f']
+                        f.write(f"            '{class_name}': {{'zenhan_3f': {zenhan}, 'kohan_3f': {kohan}}},\n")
+                
+                f.write('        },\n')
             
             f.write('    },\n')
         
         f.write('}\n')
     
-    # JSON出力
-    output_json = project_root / 'output' / 'base_times_recalculated.json'
+    # JSON出力（クラス別）
+    output_json = project_root / 'output' / 'base_times_recalculated_by_class.json'
     output_json.parent.mkdir(exist_ok=True)
     
     with open(output_json, 'w', encoding='utf-8') as f:
         json.dump(base_times_data, f, ensure_ascii=False, indent=2)
     
     print("\n" + "=" * 100)
-    print(f"✅ 基準タイムの再計算が完了しました")
+    print(f"✅ 基準タイムの再計算が完了しました（クラス別）")
     print(f"出力ファイル:")
     print(f"  - {output_file}")
     print(f"  - {output_json}")
