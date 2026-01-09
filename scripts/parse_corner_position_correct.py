@@ -14,7 +14,7 @@
 """
 
 
-def parse_corner_position(corner_str: str, umaban: str) -> int:
+def parse_corner_position(corner_str: str, umaban: str, debug: bool = False) -> int:
     """
     nvd_ra.corner_tsuka_juni_X から指定馬番のコーナー順位を取得
     
@@ -38,25 +38,38 @@ def parse_corner_position(corner_str: str, umaban: str) -> int:
     try:
         # Step 1: 固定長72文字の末尾スペースを削除
         corner_str = corner_str.strip()
+        if debug:
+            print(f"  [DEBUG] Step 1: corner_str = '{corner_str}'")
         
         # Step 2: 先頭のコーナー番号+馬番を削除（最初のカンマまで）
         # 例: '115,7,11,...' → '7,11,...'
         if ',' in corner_str:
             corner_str = corner_str[corner_str.index(',')+1:]
+            if debug:
+                print(f"  [DEBUG] Step 2: corner_str = '{corner_str}'")
         else:
+            if debug:
+                print(f"  [DEBUG] Step 2: カンマなし → 0を返す")
             return 0  # カンマがない = 不正なデータ
         
         # Step 3: 馬番を正規化（0埋めパターンも対応）
         target_umaban = str(umaban).strip().lstrip('0') or '0'
+        if debug:
+            print(f"  [DEBUG] Step 3: target_umaban = '{target_umaban}'")
         
         # Step 4: カンマで分割
         parts = [p.strip() for p in corner_str.split(',') if p.strip()]
+        if debug:
+            print(f"  [DEBUG] Step 4: parts = {parts}")
         
         position = 1  # 順位カウンター
         
         for part in parts:
             if not part:
                 continue
+            
+            if debug:
+                print(f"  [DEBUG] 処理中: part='{part}', position={position}")
             
             # 同着パターンを全て抽出
             horses_in_this_position = []
@@ -101,7 +114,13 @@ def parse_corner_position(corner_str: str, umaban: str) -> int:
             # 馬番を正規化して比較
             normalized_horses = [h.lstrip('0') or '0' for h in horses_in_this_position]
             
+            if debug:
+                print(f"  [DEBUG] horses_in_this_position = {horses_in_this_position}")
+                print(f"  [DEBUG] normalized_horses = {normalized_horses}")
+            
             if target_umaban in normalized_horses:
+                if debug:
+                    print(f"  [DEBUG] ✅ 発見！ position={position}")
                 return position
             
             # 順位を進める
@@ -139,17 +158,19 @@ if __name__ == "__main__":
     failed = 0
     
     for corner_str, umaban, expected in test_cases:
-        result = parse_corner_position(corner_str, umaban)
+        result = parse_corner_position(corner_str, umaban, debug=False)
         status = "✅" if result == expected else "❌"
         
         if result == expected:
             passed += 1
         else:
             failed += 1
-        
-        print(f"{status} 馬番={umaban:2s}, 期待={expected}, 結果={result}")
-        if result != expected:
+            # 失敗したケースのみデバッグ出力
+            print(f"\n{status} 馬番={umaban:2s}, 期待={expected}, 結果={result}")
             print(f"   データ: {corner_str.strip()}")
+            print("   --- デバッグ ---")
+            parse_corner_position(corner_str, umaban, debug=True)
+            print("   --- デバッグ終了 ---")
     
     print("="*80)
     print(f"✅ 成功: {passed}/{len(test_cases)}")
