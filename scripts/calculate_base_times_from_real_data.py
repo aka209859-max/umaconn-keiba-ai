@@ -55,11 +55,12 @@ def calculate_base_times_from_real_data():
         
         for kyori in kyori_list:
             # 前半3F・後半3Fの中央値を計算
+            # 注意: zenhan_3fは存在しないため、soha_time - kohan_3f で計算
             cur.execute("""
             WITH valid_races AS (
                 SELECT 
-                    se.zenhan_3f,
-                    se.kohan_3f
+                    CAST(se.soha_time AS NUMERIC) / 10.0 - CAST(se.kohan_3f AS NUMERIC) / 10.0 as zenhan_3f,
+                    CAST(se.kohan_3f AS NUMERIC) / 10.0 as kohan_3f
                 FROM nvd_ra ra
                 JOIN nvd_se se ON 
                     ra.kaisai_nen = se.kaisai_nen AND
@@ -68,8 +69,14 @@ def calculate_base_times_from_real_data():
                     ra.race_bango = se.race_bango
                 WHERE ra.keibajo_code = %s
                     AND ra.kyori = %s
-                    AND se.zenhan_3f > 0
-                    AND se.kohan_3f > 0
+                    AND se.soha_time IS NOT NULL
+                    AND se.soha_time != ''
+                    AND se.soha_time ~ '^[0-9]+$'
+                    AND CAST(se.soha_time AS NUMERIC) > 0
+                    AND se.kohan_3f IS NOT NULL
+                    AND se.kohan_3f != ''
+                    AND se.kohan_3f ~ '^[0-9]+$'
+                    AND CAST(se.kohan_3f AS NUMERIC) > 0
                     AND se.kakutei_chakujun IS NOT NULL
                     AND se.kakutei_chakujun != ''
                     AND se.kakutei_chakujun ~ '^[0-9]+$'
