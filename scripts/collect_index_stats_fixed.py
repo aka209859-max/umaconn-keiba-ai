@@ -122,66 +122,87 @@ def parse_corner_position(corner_str: str, umaban: str, debug=False) -> int:
     """
     nvd_ra.corner_tsuka_juni_X から指定馬番のコーナー順位を取得
     
-    フォーマット例: "21(3,5),8,10,1,4,13,"
-    - 2 = 2番馬が1位
-    - 1 = 1番馬が2位  
-    - (3,5) = 3番馬と5番馬が同着3位
-    - 8 = 8番馬が5位
+    実データ分析結果に基づく完全な実装
     
     Args:
-        corner_str: コーナー通過順位文字列
+        corner_str: コーナー通過順位文字列（固定長72文字）
         umaban: 馬番（文字列または整数）
         debug: デバッグログを出力するか
     
     Returns:
         コーナー順位（見つからない場合は0）
     """
-    if not corner_str or corner_str.strip() == '' or corner_str == '00':
-        if debug:
-            logger.debug(f"コーナーデータなし: corner_str='{corner_str}', umaban={umaban}")
+    if not corner_str or corner_str.strip() == '' or corner_str.strip() == '00':
         return 0
     
     try:
-        target_umaban = str(umaban).strip()
-        # 0埋めパターンも試す（例: '01', '02', ...）
-        target_umaban_padded = target_umaban.zfill(2)
-        position = 1  # 順位カウンター
+        # Step 1: 固定長72文字の末尾スペースを削除
+        corner_str = corner_str.strip()
         
-        # カンマで分割（先に全体のスペースを削除）
-        parts = [p.strip() for p in corner_str.strip().rstrip(',').split(',')]
+        # Step 2: 先頭のコーナー番号+馬番を削除（最初のカンマまで）
+        if ',' in corner_str:
+            corner_str = corner_str[corner_str.index(',')+1:]
+        else:
+            return 0
+        
+        # Step 3: 馬番を正規化
+        target_umaban = str(umaban).strip().lstrip('0') or '0'
+        
+        # Step 4: 正規表現で要素を分割
+        import re
+        pattern = r'\([^)]+\)|[^,]+-\([^)]+\)|[^,]+=\([^)]+\)|[^,]+-[^,]+|[^,]+=[^,]+|[^,]+'
+        parts = [p.strip() for p in re.findall(pattern, corner_str) if p.strip()]
+        
+        position = 1
         
         for part in parts:
             if not part:
                 continue
             
-            # 同着の場合: (3,5) のような形式、または (3,4)-9 のようなパターン
-            if '(' in part:
-                # カッコの中身のみを抽出
-                bracket_content = part[part.index('(')+1:part.index(')')]
-                horses = bracket_content.split(',')
-                for horse in horses:
-                    horse_stripped = horse.strip()
-                    if horse_stripped == target_umaban or horse_stripped == target_umaban_padded:
-                        if debug:
-                            logger.debug(f"✅ 同着で発見: corner_str='{corner_str}', umaban={umaban}, position={position}")
-                        return position
-                position += len(horses)
-            else:
-                # ハイフンやイコールで繋がっている場合の処理
-                # 例: '6-8', '3=8', '2-6' → 最初の馬番のみを使用
-                cleaned_part = part.split('-')[0].split('=')[0].strip()
+            horses = []
+            
+            # カッコパターン: (4,9) または 5-(6,10,9) または 4=(1,3)
+            if '(' in part and ')' in part:
+                before_bracket = part[:part.index('(')]
+                before_bracket = before_bracket.replace('-', '').replace('=', '').strip()
+                if before_bracket and before_bracket.isdigit():
+                    horses.append(before_bracket)
                 
-                if cleaned_part == target_umaban or cleaned_part == target_umaban_padded:
-                    if debug:
-                        logger.debug(f"✅ 発見: corner_str='{corner_str}', umaban={umaban}, position={position}, part='{part}', cleaned='{cleaned_part}'")
-                    return position
-                position += 1
+                bracket_content = part[part.index('(')+1:part.index(')')]
+                for h in bracket_content.split(','):
+                    h = h.strip()
+                    if h and h.isdigit():
+                        horses.append(h)
+            
+            # ハイフンパターン: 1-9 (カッコなし)
+            elif '-' in part:
+                for h in part.split('-'):
+                    h = h.strip()
+                    if h and h.isdigit():
+                        horses.append(h)
+            
+            # イコールパターン: 3=4 (カッコなし)
+            elif '=' in part:
+                for h in part.split('='):
+                    h = h.strip()
+                    if h and h.isdigit():
+                        horses.append(h)
+            
+            # 通常パターン
+            elif part.isdigit():
+                horses.append(part)
+            
+            # 馬番を正規化して比較
+            normalized_horses = [h.lstrip('0') or '0' for h in horses]
+            
+            if target_umaban in normalized_horses:
+                return position
+            
+            position += len(horses)
         
-        if debug:
-            logger.debug(f"❌ 見つからず: corner_str='{corner_str}', umaban={umaban}, target={target_umaban}/{target_umaban_padded}, parts={parts}")
-        return 0  # 見つからない場合
+        return 0
+    
     except Exception as e:
-        logger.warning(f"コーナー順位パースエラー (馬番{umaban}): {e}")
         return 0
 
 
