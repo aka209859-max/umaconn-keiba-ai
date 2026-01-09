@@ -151,14 +151,15 @@ def parse_corner_position(corner_str: str, umaban: str, debug=False) -> int:
         parts = corner_str.strip(',').split(',')
         
         for part in parts:
-            part = part.strip()
+            part = part.strip()  # 前後のスペース削除
             if not part:
                 continue
             
-            # 同着の場合: (3,5) のような形式
-            if part.startswith('(') and part.endswith(')'):
-                # カッコ内の馬番を分割
-                horses = part[1:-1].split(',')
+            # 同着の場合: (3,5) のような形式、または (3,4)-9 のようなパターン
+            if '(' in part:
+                # カッコの中身のみを抽出
+                bracket_content = part[part.index('(')+1:part.index(')')]
+                horses = bracket_content.split(',')
                 for horse in horses:
                     horse_stripped = horse.strip()
                     if horse_stripped == target_umaban or horse_stripped == target_umaban_padded:
@@ -167,10 +168,13 @@ def parse_corner_position(corner_str: str, umaban: str, debug=False) -> int:
                         return position
                 position += len(horses)
             else:
-                # 通常の場合
-                if part == target_umaban or part == target_umaban_padded:
+                # ハイフンやイコールで繋がっている場合の処理
+                # 例: '6-8', '3=8', '2-6' → 最初の馬番のみを使用
+                cleaned_part = part.split('-')[0].split('=')[0].strip()
+                
+                if cleaned_part == target_umaban or cleaned_part == target_umaban_padded:
                     if debug:
-                        logger.debug(f"✅ 発見: corner_str='{corner_str}', umaban={umaban}, position={position}")
+                        logger.debug(f"✅ 発見: corner_str='{corner_str}', umaban={umaban}, position={position}, part='{part}', cleaned='{cleaned_part}'")
                     return position
                 position += 1
         
