@@ -93,23 +93,38 @@ def recalculate_base_times():
         print('=' * 100)
         
         # 距離別のタイムデータを取得
+        # zenhan_3f（前半3F）を計算: soha_time（総破タイム） - kohan_3f（後半3F）
         query = """
         SELECT 
-            kyori,
-            zenhan_3f,
-            kohan_3f
-        FROM nar_results
-        WHERE keibajo_code = %s
-          AND race_date BETWEEN %s AND %s
-          AND zenhan_3f IS NOT NULL
-          AND kohan_3f IS NOT NULL
-          AND zenhan_3f > 0
-          AND kohan_3f > 0
-          AND kakutei_chakujun BETWEEN 1 AND 3
-        ORDER BY kyori, zenhan_3f, kohan_3f
+            ra.kyori,
+            (se.soha_time - se.kohan_3f) AS zenhan_3f,
+            se.kohan_3f
+        FROM nvd_ra ra
+        JOIN nvd_se se ON 
+            ra.kaisai_nen = se.kaisai_nen AND
+            ra.kaisai_tsukihi = se.kaisai_tsukihi AND
+            ra.keibajo_code = se.keibajo_code AND
+            ra.race_bango = se.race_bango
+        WHERE ra.keibajo_code = %s
+          AND ra.kaisai_nen || ra.kaisai_tsukihi >= %s
+          AND ra.kaisai_nen || ra.kaisai_tsukihi <= %s
+          AND se.kakutei_chakujun IS NOT NULL
+          AND se.kakutei_chakujun != ''
+          AND se.kakutei_chakujun ~ '^[0-9]+$'
+          AND CAST(se.kakutei_chakujun AS INTEGER) BETWEEN 1 AND 3
+          AND se.soha_time IS NOT NULL
+          AND se.kohan_3f IS NOT NULL
+          AND se.soha_time > 0
+          AND se.kohan_3f > 0
+          AND (se.soha_time - se.kohan_3f) > 0
+        ORDER BY ra.kyori, zenhan_3f, se.kohan_3f
         """
         
-        cur.execute(query, (keibajo_code, start_date, end_date))
+        # 日付フォーマットを YYYYMMDD に変換
+        start_date_formatted = start_date.replace('-', '')
+        end_date_formatted = end_date.replace('-', '')
+        
+        cur.execute(query, (keibajo_code, start_date_formatted, end_date_formatted))
         rows = cur.fetchall()
         
         if not rows:
