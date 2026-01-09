@@ -147,11 +147,10 @@ def parse_corner_position(corner_str: str, umaban: str, debug=False) -> int:
         target_umaban_padded = target_umaban.zfill(2)
         position = 1  # 順位カウンター
         
-        # カンマで分割
-        parts = corner_str.strip(',').split(',')
+        # カンマで分割（先に全体のスペースを削除）
+        parts = [p.strip() for p in corner_str.strip().rstrip(',').split(',')]
         
         for part in parts:
-            part = part.strip()  # 前後のスペース削除
             if not part:
                 continue
             
