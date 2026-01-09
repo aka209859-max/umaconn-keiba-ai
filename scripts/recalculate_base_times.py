@@ -96,9 +96,9 @@ def recalculate_base_times():
         # zenhan_3f（前半3F）を計算: soha_time（総破タイム） - kohan_3f（後半3F）
         query = """
         SELECT 
-            ra.kyori,
-            (se.soha_time - se.kohan_3f) AS zenhan_3f,
-            se.kohan_3f
+            CAST(ra.kyori AS INTEGER) AS kyori,
+            (CAST(se.soha_time AS DECIMAL) - CAST(se.kohan_3f AS DECIMAL)) AS zenhan_3f,
+            CAST(se.kohan_3f AS DECIMAL) AS kohan_3f
         FROM nvd_ra ra
         JOIN nvd_se se ON 
             ra.kaisai_nen = se.kaisai_nen AND
@@ -114,10 +114,12 @@ def recalculate_base_times():
           AND CAST(se.kakutei_chakujun AS INTEGER) BETWEEN 1 AND 3
           AND se.soha_time IS NOT NULL
           AND se.kohan_3f IS NOT NULL
-          AND se.soha_time > 0
-          AND se.kohan_3f > 0
-          AND (se.soha_time - se.kohan_3f) > 0
-        ORDER BY ra.kyori, zenhan_3f, se.kohan_3f
+          AND se.soha_time ~ '^[0-9.]+$'
+          AND se.kohan_3f ~ '^[0-9.]+$'
+          AND CAST(se.soha_time AS DECIMAL) > 0
+          AND CAST(se.kohan_3f AS DECIMAL) > 0
+          AND (CAST(se.soha_time AS DECIMAL) - CAST(se.kohan_3f AS DECIMAL)) > 0
+        ORDER BY kyori, zenhan_3f, kohan_3f
         """
         
         # 日付フォーマットを YYYYMMDD に変換
