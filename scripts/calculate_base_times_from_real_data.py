@@ -189,7 +189,7 @@ def calculate_base_times_from_real_data():
                     'race_count': race_count
                 }
                 
-                print(f"  距離 {kyori:4d}m: 前半3F={avg_zenhan:5.1f}秒, 後半3F={avg_kohan:5.1f}秒 (レース数:{race_count:5d})")
+                print(f"  距離 {kyori:4d}m: 前半3F={median_zenhan:5.1f}秒, 後半3F={median_kohan:5.1f}秒 (レース数:{race_count:5d})")
     
     conn.close()
     
