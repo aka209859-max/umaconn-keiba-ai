@@ -81,11 +81,36 @@ def calculate_all_indices_simple(df: pd.DataFrame) -> pd.DataFrame:
             soha_time_sec = float(row['soha_time_sec'])
             kohan_3f_sec = float(row['kohan_3f_sec'])
             
-            # 前半3F推定
+            # 前半3F推定（3パターン）
             if 'actual_ten_3f' in row and pd.notna(row['actual_ten_3f']):
+                # データに実測値がある場合はそれを使用
                 zenhan_3f = float(row['actual_ten_3f'])
             else:
-                zenhan_3f = soha_time_sec - kohan_3f_sec
+                # 距離別の推定
+                if kyori < 1200:
+                    # 1200m未満: 走破タイム - 後半3F（実際は2Fなどになるが許容）
+                    zenhan_3f = soha_time_sec - kohan_3f_sec
+                elif kyori == 1200:
+                    # 1200m: 走破タイム - 後半3F
+                    zenhan_3f = soha_time_sec - kohan_3f_sec
+                else:
+                    # 1201m以上: ten_3f_estimator.py と同じロジック（簡易版）
+                    # 基準タイム + スピード指数補正の簡易実装
+                    # 注: 本実装ではten_3f_estimator.pyを使用すべきだが、
+                    # データ確認用スクリプトなので簡易版を使用
+                    if kyori <= 1400:
+                        ratio = 0.26  # 前半3F ≈ 走破タイムの26%
+                    elif kyori <= 1600:
+                        ratio = 0.22
+                    elif kyori <= 1800:
+                        ratio = 0.22
+                    elif kyori <= 2000:
+                        ratio = 0.17
+                    else:
+                        ratio = 0.16
+                    zenhan_3f = soha_time_sec * ratio
+                    # 物理的制約
+                    zenhan_3f = max(30.0, min(45.0, zenhan_3f))
             
             # コーナー順位
             if 'corner_4' in row and pd.notna(row['corner_4']):
@@ -112,9 +137,9 @@ def calculate_all_indices_simple(df: pd.DataFrame) -> pd.DataFrame:
             except:
                 base_time = 39.0
             
-            # 1. 上がり指数
-            agari_index = ((base_time - kohan_3f_sec)) * 10
-            agari_index = max(-100, min(100, agari_index))  # 範囲制限のみ追加
+            # 1. 上がり指数（実装準拠: ×1、補正は省略）
+            agari_index = (base_time - kohan_3f_sec)
+            agari_index = max(-100, min(100, agari_index))
             
             # 2. 位置指数（コーナー4角順位ベース）
             avg_position = corner_4
@@ -122,13 +147,13 @@ def calculate_all_indices_simple(df: pd.DataFrame) -> pd.DataFrame:
             position_index = ((base_position - avg_position) / tosu) * 100
             position_index = max(0, min(100, position_index))  # 範囲制限のみ追加
             
-            # 3. テン指数
-            ten_index = ((base_time - zenhan_3f)) * 10
-            ten_index = max(-100, min(100, ten_index))  # 範囲制限のみ追加
+            # 3. テン指数（実装準拠: ×1、補正は省略）
+            ten_index = (base_time - zenhan_3f)
+            ten_index = max(-100, min(100, ten_index))
             
-            # 4. ペース指数（テン指数 - 上がり指数）
-            pace_index = ten_index - agari_index
-            pace_index = max(-100, min(100, pace_index))  # 範囲制限のみ追加
+            # 4. ペース指数（実装準拠: 平均、補正は省略）
+            pace_index = (ten_index + agari_index) / 2
+            pace_index = max(-100, min(100, pace_index))
             
             results.append({
                 'race_id': row['race_id'],
