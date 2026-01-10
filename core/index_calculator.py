@@ -152,17 +152,41 @@ def get_furi_correction(furi_code: str) -> Tuple[float, str]:
 
 
 # ============================
-# 枠順補正マッピング
+# 枠順補正マッピング（ベイズ推定版）
 # ============================
 
-def get_wakuban_correction(wakuban: int, tosu: int, kyori: int) -> Tuple[float, str]:
+# ベイズ推定による枠順係数テーブルをロード
+_WAKUBAN_COEFFICIENTS_BAYESIAN = None
+
+def load_wakuban_coefficients_bayesian():
+    """ベイズ推定による枠順係数をロード"""
+    global _WAKUBAN_COEFFICIENTS_BAYESIAN
+    if _WAKUBAN_COEFFICIENTS_BAYESIAN is None:
+        try:
+            import json
+            json_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'wakuban_coefficients_bayesian.json')
+            with open(json_path, 'r', encoding='utf-8') as f:
+                _WAKUBAN_COEFFICIENTS_BAYESIAN = json.load(f)
+            logger.info("✅ ベイズ推定枠順係数をロード完了")
+        except Exception as e:
+            logger.warning(f"⚠️ ベイズ推定枠順係数のロード失敗（従来方式にフォールバック）: {e}")
+            _WAKUBAN_COEFFICIENTS_BAYESIAN = {}
+    return _WAKUBAN_COEFFICIENTS_BAYESIAN
+
+def get_wakuban_correction(wakuban: int, tosu: int, kyori: int, keibajo_code: str = None) -> Tuple[float, str]:
     """
-    枠順補正値を計算
+    枠順補正値を計算（ベイズ推定版）
+    
+    【変更】ベイズ縮小推定による統計的に信頼性の高い係数を使用
+    - サンプル数を考慮した信頼区間付き推定
+    - 過剰適合（Overfitting）を防止
+    - 統計的に有意でない係数は0に設定
     
     Args:
         wakuban: 枠番（1-8）
         tosu: 出走頭数
         kyori: 距離（m）
+        keibajo_code: 競馬場コード（オプション）
     
     Returns:
         (補正値_秒, 説明)
@@ -170,26 +194,37 @@ def get_wakuban_correction(wakuban: int, tosu: int, kyori: int) -> Tuple[float, 
     if wakuban <= 0 or tosu <= 0:
         return (0.0, 'データなし')
     
-    # 枠番を相対位置に変換（0.0=最内 〜 1.0=最外）
+    # ベイズ推定係数テーブルをロード
+    coefficients = load_wakuban_coefficients_bayesian()
+    
+    # 競馬場コード×距離×枠番で係数を取得
+    if keibajo_code and str(keibajo_code) in coefficients:
+        keibajo_data = coefficients[str(keibajo_code)]
+        if str(kyori) in keibajo_data:
+            kyori_data = keibajo_data[str(kyori)]
+            if str(wakuban) in kyori_data:
+                coefficient = kyori_data[str(wakuban)]
+                # 係数を秒数に変換（係数 / 10 = 秒数）
+                correction_seconds = coefficient / 10.0
+                desc = f'ベイズ推定（係数: {coefficient:.1f}）'
+                return (round(correction_seconds, 2), desc)
+    
+    # フォールバック: 従来方式（距離別の枠順影響度）
     relative_position = (wakuban - 1) / max(tosu - 1, 1)
     
-    # 距離別の枠順影響度
     if kyori < 1400:
-        # 短距離: 内枠有利、外枠不利
         base_correction = (0.5 - relative_position) * 0.6
-        desc = '短距離・内枠有利'
+        desc = '短距離・内枠有利（フォールバック）'
     elif kyori < 1800:
-        # マイル: 中枠やや有利
         if 0.3 <= relative_position <= 0.7:
             base_correction = 0.2
-            desc = 'マイル・中枠有利'
+            desc = 'マイル・中枠有利（フォールバック）'
         else:
             base_correction = (0.5 - abs(relative_position - 0.5)) * 0.3
-            desc = 'マイル・端枠やや不利'
+            desc = 'マイル・端枠やや不利（フォールバック）'
     else:
-        # 中長距離: 外枠やや有利（展開待ち）
         base_correction = (relative_position - 0.5) * 0.2
-        desc = '中長距離・外枠やや有利'
+        desc = '中長距離・外枠やや有利（フォールバック）'
     
     return (round(base_correction, 2), desc)
 
