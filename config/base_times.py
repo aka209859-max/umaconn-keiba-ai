@@ -20,29 +20,31 @@ logger = logging.getLogger(__name__)
 # ============================
 
 # 地方競馬全14主催者（NARコード付き）
+# 注意: 競馬場名は実際の競馬場名（門別、盛岡、水沢等）
 ORGANIZERS = {
     # 南関東4場（MINAMI_KANTO）
-    '42': {'name': '大井', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
-    '43': {'name': '川崎', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
-    '44': {'name': '船橋', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
-    '45': {'name': '浦和', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
+    '42': {'name': '浦和', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
+    '43': {'name': '船橋', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
+    '44': {'name': '大井', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
+    '45': {'name': '川崎', 'region': 'MINAMI_KANTO', 'base_class': 'C2', 'calc_type': 'HYBRID'},
     
     # 北海道・東北
-    '30': {'name': '北海道', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'},
-    '35': {'name': '岩手', 'region': 'TOHOKU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '30': {'name': '門別', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '35': {'name': '盛岡', 'region': 'TOHOKU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
     
     # 北陸・東海
-    '36': {'name': '金沢', 'region': 'HOKURIKU', 'base_class': 'C', 'calc_type': 'POINT'},
-    '46': {'name': '笠松', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'},
-    '47': {'name': '名古屋', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '36': {'name': '水沢', 'region': 'TOHOKU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '46': {'name': '金沢', 'region': 'HOKURIKU', 'base_class': 'C', 'calc_type': 'POINT'},
+    '47': {'name': '笠松', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '48': {'name': '名古屋', 'region': 'TOKAI', 'base_class': 'C', 'calc_type': 'EARNINGS'},
     
     # 近畿
-    '48': {'name': '園田', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'},
-    '49': {'name': '姫路', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'},
+    '50': {'name': '園田', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'},
+    '51': {'name': '姫路', 'region': 'KINKI', 'base_class': 'C2', 'calc_type': 'POINT'},
     
     # 四国・九州
-    '50': {'name': '高知', 'region': 'SHIKOKU', 'base_class': 'C', 'calc_type': 'CYCLE'},
-    '51': {'name': '佐賀', 'region': 'KYUSHU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
+    '54': {'name': '高知', 'region': 'SHIKOKU', 'base_class': 'C', 'calc_type': 'CYCLE'},
+    '55': {'name': '佐賀', 'region': 'KYUSHU', 'base_class': 'C', 'calc_type': 'EARNINGS'},
     
     # ばんえい（特殊）
     '65': {'name': 'ばんえい', 'region': 'HOKKAIDO', 'base_class': 'C', 'calc_type': 'EARNINGS'},
