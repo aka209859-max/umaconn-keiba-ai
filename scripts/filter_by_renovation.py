@@ -34,8 +34,8 @@ RENOVATION_HISTORY = {
     '大井競馬場': {
         'keibajo_code': 44,
         'renovation_date_sand': '20231013',
-        'impact': '本馬場砂入れ替え（軽微）',
-        'handling': '全期間使用（影響は小さい）'
+        'impact': '本馬場砂入れ替え（重大：馬場特性が大きく変化）',
+        'handling': '2023年10月13日以降のデータのみ使用'
     }
 }
 
@@ -49,9 +49,9 @@ PERIOD_CONFIG = {
         'description': '機械学習・サンプル用（全期間）'
     },
     'recovery_rate_analysis': {
-        'start_date': '20160101',
+        'start_date': '20231013',  # 大井競馬場砂入れ替え後
         'end_date': '20251231',
-        'description': '回収率分析用（10年間）'
+        'description': '回収率分析用（2023年10月13日～2025年12月31日）'
     }
 }
 
