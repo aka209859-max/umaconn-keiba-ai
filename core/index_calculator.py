@@ -651,7 +651,7 @@ def predict_ashishitsu(
 # 8. 統合計算関数
 # ============================
 
-def calculate_all_indexes(horse_data: Dict) -> Dict:
+def calculate_all_indexes(horse_data: Dict, race_info: Dict = None) -> Dict:
     """
     1頭分の全指数を一括計算
     
@@ -660,6 +660,8 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
             必須キー: zenhan_3f, kohan_3f, corner_1-4, kyori, 
                      babajotai_code_dirt, keibajo_code, tosu
             ※ zenhan_3f が欠損している場合、Ten3FEstimator で推定値を使用
+        race_info: レース情報（オプション）
+            grade_code: クラスコード（'A'/'B'/'C'/'D'/'E'/None=一般戦）
     
     Returns:
         指数データ
@@ -691,13 +693,18 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
         bataiju = safe_float(horse_data.get('bataiju'), 460.0)
         time_seconds = safe_float(horse_data.get('soha_time')) / 10.0 if horse_data.get('soha_time') else 0.0
         
+        # ✅ レース情報から grade_code を取得
+        grade_code = None
+        if race_info:
+            grade_code = race_info.get('grade_code')
+        
         # ✅ Phase 2統合: zenhan_3f が欠損している場合、Ten3FEstimator で推定
         zenhan_3f = zenhan_3f_raw
         estimated_ten_3f = None
         ten_3f_method = 'actual'
         
         if zenhan_3f_raw is None or zenhan_3f_raw == 0.0:
-            logger.info(f"⚠️ zenhan_3f が欠損しています。Ten3FEstimator で推定します（kyori={kyori}m）")
+            logger.info(f"⚠️ zenhan_3f が欠損しています。Ten3FEstimator で推定します（kyori={kyori}m, grade={grade_code}）")
             estimator = get_ten_3f_estimator()
             result = estimator.estimate(
                 time_seconds=time_seconds,
@@ -706,12 +713,14 @@ def calculate_all_indexes(horse_data: Dict) -> Dict:
                 corner_1=corner_1 if corner_1 > 0 else None,
                 corner_2=corner_2 if corner_2 > 0 else None,
                 field_size=tosu,
-                use_ml=True
+                use_ml=True,
+                keibajo_code=keibajo_code,  # ✅ 競馬場コード追加
+                grade_code=grade_code       # ✅ クラスコード追加
             )
             zenhan_3f = result['ten_3f_final']
             estimated_ten_3f = zenhan_3f
             ten_3f_method = result['method']
-            logger.info(f"✅ Ten3F推定完了: {zenhan_3f:.2f}秒 (method={ten_3f_method})")
+            logger.info(f"✅ Ten3F推定完了: {zenhan_3f:.2f}秒 (method={ten_3f_method}, grade={grade_code})")
         
         # 各指数を計算
         ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu, kinryo, bataiju)
