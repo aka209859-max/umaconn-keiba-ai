@@ -10,7 +10,7 @@
 - 70%の張り付き問題を解消
 
 使用方法:
-    cd /d E:\UmaData\nar-analytics-python-v2
+    cd /d E:\\UmaData\\nar-analytics-python-v2
     python train_index_normalizers_windows.py
 
 出力:
