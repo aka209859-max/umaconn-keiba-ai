@@ -98,17 +98,21 @@ def calculate_all_indices_simple(df: pd.DataFrame) -> pd.DataFrame:
             
             # 1. 上がり指数
             agari_index = ((base_time - kohan_3f_sec)) * 10
+            agari_index = max(-100, min(100, agari_index))  # 範囲制限のみ追加
             
             # 2. 位置指数（コーナー4角順位ベース）
             avg_position = corner_4
             base_position = tosu / 2.0
             position_index = ((base_position - avg_position) / tosu) * 100
+            position_index = max(0, min(100, position_index))  # 範囲制限のみ追加
             
             # 3. テン指数
             ten_index = ((base_time - zenhan_3f)) * 10
+            ten_index = max(-100, min(100, ten_index))  # 範囲制限のみ追加
             
             # 4. ペース指数（テン指数 - 上がり指数）
             pace_index = ten_index - agari_index
+            pace_index = max(-100, min(100, pace_index))  # 範囲制限のみ追加
             
             results.append({
                 'race_id': row['race_id'],
