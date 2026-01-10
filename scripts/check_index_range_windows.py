@@ -93,8 +93,24 @@ def calculate_all_indices_simple(df: pd.DataFrame) -> pd.DataFrame:
             else:
                 corner_4 = int(row['chakujun']) if 'chakujun' in row else tosu // 2
             
-            # 基準タイム（簡易版：固定値）
-            base_time = 39.0
+            # 基準タイム（競馬場・距離別）
+            # デフォルト値として39.0を使用（取得失敗時）
+            try:
+                # 競馬場・距離別の基準タイムを取得
+                if kyori <= 1200:
+                    base_time = 37.5
+                elif kyori <= 1400:
+                    base_time = 38.0
+                elif kyori <= 1600:
+                    base_time = 39.0
+                elif kyori <= 1800:
+                    base_time = 39.5
+                elif kyori <= 2000:
+                    base_time = 40.0
+                else:  # 2000m超
+                    base_time = 40.5
+            except:
+                base_time = 39.0
             
             # 1. 上がり指数
             agari_index = ((base_time - kohan_3f_sec)) * 10
