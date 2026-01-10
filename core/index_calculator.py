@@ -698,29 +698,46 @@ def calculate_all_indexes(horse_data: Dict, race_info: Dict = None) -> Dict:
         if race_info:
             grade_code = race_info.get('grade_code')
         
-        # ✅ Phase 2統合: zenhan_3f が欠損している場合、Ten3FEstimator で推定
+        # ✅ Phase 2統合 + 距離別処理: zenhan_3f が欠損している場合の処理
         zenhan_3f = zenhan_3f_raw
         estimated_ten_3f = None
         ten_3f_method = 'actual'
         
         if zenhan_3f_raw is None or zenhan_3f_raw == 0.0:
-            logger.info(f"⚠️ zenhan_3f が欠損しています。Ten3FEstimator で推定します（kyori={kyori}m, grade={grade_code}）")
-            estimator = get_ten_3f_estimator()
-            result = estimator.estimate(
-                time_seconds=time_seconds,
-                kohan_3f_seconds=kohan_3f,
-                kyori=kyori,
-                corner_1=corner_1 if corner_1 > 0 else None,
-                corner_2=corner_2 if corner_2 > 0 else None,
-                field_size=tosu,
-                use_ml=True,
-                keibajo_code=keibajo_code,  # ✅ 競馬場コード追加
-                grade_code=grade_code       # ✅ クラスコード追加
-            )
-            zenhan_3f = result['ten_3f_final']
-            estimated_ten_3f = zenhan_3f
-            ten_3f_method = result['method']
-            logger.info(f"✅ Ten3F推定完了: {zenhan_3f:.2f}秒 (method={ten_3f_method}, grade={grade_code})")
+            # 1200m以下: 直接計算（Ten3FEstimator不要）
+            if kyori <= 1200:
+                if kohan_3f > 0:
+                    # T_start = T_total - T_last（確定値計算）
+                    zenhan_3f = time_seconds - kohan_3f
+                    estimated_ten_3f = zenhan_3f
+                    ten_3f_method = 'direct_calculation'
+                    logger.info(f"✅ 1200m以下の前半タイム計算: {zenhan_3f:.2f}秒 (T_total={time_seconds:.2f}秒 - T_last={kohan_3f:.2f}秒)")
+                else:
+                    # 後半3F欠損時: 前後半均等と仮定
+                    zenhan_3f = time_seconds * 0.50
+                    estimated_ten_3f = zenhan_3f
+                    ten_3f_method = 'direct_calculation'
+                    logger.warning(f"⚠️ 後半3F欠損、前後半均等と仮定: {zenhan_3f:.2f}秒 (kyori={kyori}m)")
+            
+            # 1201m以上: Ten3FEstimator で推定
+            else:
+                logger.info(f"⚠️ zenhan_3f が欠損しています。Ten3FEstimator で推定します（kyori={kyori}m, grade={grade_code}）")
+                estimator = get_ten_3f_estimator()
+                result = estimator.estimate(
+                    time_seconds=time_seconds,
+                    kohan_3f_seconds=kohan_3f,
+                    kyori=kyori,
+                    corner_1=corner_1 if corner_1 > 0 else None,
+                    corner_2=corner_2 if corner_2 > 0 else None,
+                    field_size=tosu,
+                    use_ml=True,
+                    keibajo_code=keibajo_code,  # ✅ 競馬場コード追加
+                    grade_code=grade_code       # ✅ クラスコード追加
+                )
+                zenhan_3f = result['ten_3f_final']
+                estimated_ten_3f = zenhan_3f
+                ten_3f_method = result['method']
+                logger.info(f"✅ Ten3F推定完了: {zenhan_3f:.2f}秒 (method={ten_3f_method}, grade={grade_code})")
         
         # 各指数を計算
         ten_index = calculate_ten_index(zenhan_3f, kyori, baba_code, keibajo_code, furi_code, wakuban, tosu, kinryo, bataiju)
