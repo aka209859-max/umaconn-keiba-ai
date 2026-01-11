@@ -25,6 +25,9 @@ from config.base_times import BASE_TIMES, BABA_CORRECTION, ORGANIZERS, get_base_
 # Ten3F推定エンジンをインポート
 from core.ten_3f_estimator import Ten3FEstimator
 
+# 正規化エンジンをインポート
+from core.index_normalizer import RacingIndexNormalizer
+
 logger = logging.getLogger(__name__)
 
 # Ten3F推定エンジンの初期化（グローバル変数）
@@ -42,6 +45,36 @@ def get_ten_3f_estimator():
         except Exception as e:
             logger.warning(f"⚠️ Ten3F推定モデル読み込み失敗（ベースライン推定のみ使用）: {e}")
     return _ten_3f_estimator
+
+
+# 正規化エンジンの初期化（グローバル変数）
+_normalizers = None
+
+def get_normalizers():
+    """正規化エンジンのシングルトン取得"""
+    global _normalizers
+    if _normalizers is None:
+        normalizers_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'models', 'normalizers')
+        _normalizers = {}
+        
+        # 各指数の正規化器を読み込み
+        normalizer_files = {
+            'ten_index': 'ten_index_normalizer.pkl',
+            'agari_index': 'agari_index_normalizer.pkl',
+            'position_index': 'position_index_normalizer.pkl',
+            'pace_index': 'pace_index_normalizer.pkl'
+        }
+        
+        for index_name, filename in normalizer_files.items():
+            try:
+                filepath = os.path.join(normalizers_dir, filename)
+                _normalizers[index_name] = RacingIndexNormalizer.load(filepath)
+                logger.info(f"✅ 正規化器読み込み成功: {index_name} ({filename})")
+            except Exception as e:
+                logger.warning(f"⚠️ 正規化器読み込み失敗: {index_name} - {e}")
+                _normalizers[index_name] = None
+    
+    return _normalizers
 
 
 # ============================
@@ -712,7 +745,7 @@ def predict_ashishitsu(
 # 8. 統合計算関数
 # ============================
 
-def calculate_all_indexes(horse_data: Dict, race_info: Dict = None) -> Dict:
+def calculate_all_indexes(horse_data: Dict, race_info: Dict = None, apply_normalization: bool = True) -> Dict:
     """
     1頭分の全指数を一括計算
     
@@ -723,14 +756,19 @@ def calculate_all_indexes(horse_data: Dict, race_info: Dict = None) -> Dict:
             ※ zenhan_3f が欠損している場合、Ten3FEstimator で推定値を使用
         race_info: レース情報（オプション）
             grade_code: クラスコード（'A'/'B'/'C'/'D'/'E'/None=一般戦）
+        apply_normalization: 正規化を適用するかどうか（デフォルト: True）
     
     Returns:
         指数データ
             {
-                'ten_index': float,
-                'position_index': float,
-                'agari_index': float,
-                'pace_index': float,
+                'ten_index': float (正規化済み),
+                'ten_index_raw': float (正規化前、apply_normalization=Trueの場合のみ),
+                'position_index': float (正規化済み),
+                'position_index_raw': float (正規化前、apply_normalization=Trueの場合のみ),
+                'agari_index': float (正規化済み),
+                'agari_index_raw': float (正規化前、apply_normalization=Trueの場合のみ),
+                'pace_index': float (正規化済み),
+                'pace_index_raw': float (正規化前、apply_normalization=Trueの場合のみ),
                 'ashishitsu': str,
                 'estimated_ten_3f': float (推定値を使用した場合のみ),
                 'ten_3f_method': str (推定方法: 'actual' | 'baseline' | 'ml')
@@ -810,14 +848,72 @@ def calculate_all_indexes(horse_data: Dict, race_info: Dict = None) -> Dict:
         past_corners = horse_data.get('past_corners', [])
         ashishitsu = predict_ashishitsu(past_corners, wakuban=wakuban, tosu=tosu, kyori=kyori)
         
-        result = {
-            'ten_index': ten_index,
-            'position_index': position_index,
-            'agari_index': agari_index,
-            'pace_index': pace_index,
-            'pace_type': pace_type,
-            'ashishitsu': ashishitsu
-        }
+        # 正規化の適用
+        if apply_normalization:
+            normalizers = get_normalizers()
+            
+            # 正規化前の値を保存
+            result = {
+                'ten_index_raw': ten_index,
+                'position_index_raw': position_index,
+                'agari_index_raw': agari_index,
+                'pace_index_raw': pace_index,
+            }
+            
+            # 各指数を正規化
+            if normalizers.get('ten_index'):
+                try:
+                    result['ten_index'] = float(normalizers['ten_index'].transform([ten_index])[0])
+                except Exception as e:
+                    logger.warning(f"⚠️ テン指数の正規化失敗: {e}")
+                    result['ten_index'] = ten_index
+            else:
+                result['ten_index'] = ten_index
+            
+            if normalizers.get('position_index'):
+                try:
+                    result['position_index'] = float(normalizers['position_index'].transform([position_index])[0])
+                except Exception as e:
+                    logger.warning(f"⚠️ 位置指数の正規化失敗: {e}")
+                    result['position_index'] = position_index
+            else:
+                result['position_index'] = position_index
+            
+            if normalizers.get('agari_index'):
+                try:
+                    result['agari_index'] = float(normalizers['agari_index'].transform([agari_index])[0])
+                except Exception as e:
+                    logger.warning(f"⚠️ 上がり指数の正規化失敗: {e}")
+                    result['agari_index'] = agari_index
+            else:
+                result['agari_index'] = agari_index
+            
+            if normalizers.get('pace_index'):
+                try:
+                    result['pace_index'] = float(normalizers['pace_index'].transform([pace_index])[0])
+                except Exception as e:
+                    logger.warning(f"⚠️ ペース指数の正規化失敗: {e}")
+                    result['pace_index'] = pace_index
+            else:
+                result['pace_index'] = pace_index
+            
+            # 正規化に成功した場合、ログ出力
+            logger.debug(f"✅ 正規化完了: ten={result['ten_index']:.2f}(raw={ten_index:.2f}), "
+                        f"position={result['position_index']:.2f}(raw={position_index:.2f}), "
+                        f"agari={result['agari_index']:.2f}(raw={agari_index:.2f}), "
+                        f"pace={result['pace_index']:.2f}(raw={pace_index:.2f})")
+        else:
+            # 正規化なしの場合
+            result = {
+                'ten_index': ten_index,
+                'position_index': position_index,
+                'agari_index': agari_index,
+                'pace_index': pace_index,
+            }
+        
+        # 共通項目を追加
+        result['pace_type'] = pace_type
+        result['ashishitsu'] = ashishitsu
         
         # 推定値を使用した場合のみ、推定情報を追加
         if estimated_ten_3f is not None:
